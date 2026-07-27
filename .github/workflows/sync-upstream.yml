@@ -748,14 +748,18 @@ jobs:
             }
           }
 
-          $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
-          if ($tagCommit -ne $metadata.ForkCommit) {
-            throw "Release tag target mismatch: expected $($metadata.ForkCommit), got $tagCommit."
-          }
-
           $release = Invoke-GhApi $releaseEndpoint
           if (-not $release.draft) {
             throw 'Release became public before its assets were verified.'
+          }
+          $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
+          if ($null -eq $tagCommit) {
+            if ([string]$release.target_commitish -ne [string]$metadata.ForkCommit) {
+              throw "Draft release target mismatch: expected $($metadata.ForkCommit), got $($release.target_commitish)."
+            }
+          }
+          elseif ($tagCommit -ne $metadata.ForkCommit) {
+            throw "Draft release tag mismatch: expected $($metadata.ForkCommit), got $tagCommit."
           }
 
           & gh release upload $metadata.Tag `
@@ -785,6 +789,10 @@ jobs:
           $release = Invoke-GhApi $releaseEndpoint
           if ($release.draft) {
             throw 'The release is still a draft after publication.'
+          }
+          $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
+          if ($tagCommit -ne $metadata.ForkCommit) {
+            throw "Published release tag mismatch: expected $($metadata.ForkCommit), got $tagCommit."
           }
           Assert-ReleaseAssets `
             -Release $release `
