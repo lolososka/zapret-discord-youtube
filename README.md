@@ -14,6 +14,7 @@
 > стратегий, автоподбора, диагностики, управления службой и пользовательскими списками.
 > Flowseal не связан с этой оболочкой и не одобрял её как официальную сборку.
 > Исходники и инструкция находятся в [`gui/`](./gui/README.md).
+> Готовый EXE: [Zapret Control Center v1.10.0](https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.10.0).
 
 > [!CAUTION]
 >

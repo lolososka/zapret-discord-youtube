@@ -79,6 +79,9 @@
 
 ## Установка
 
+Готовый `ZapretGUI.exe` можно скачать из
+[GitHub Release](https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.10.0).
+
 1. Скачайте и распакуйте оригинальный [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube/releases/latest).
 2. Положите `ZapretGUI.exe` в корень этой папки — туда же, где лежат `bin`, `lists` и файлы `general*.bat`.
 3. Запустите. Программа запросит права администратора: без них WinDivert не поднимется.
