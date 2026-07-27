@@ -1,13 +1,19 @@
-name: Sync Flowseal upstream
+name: Sync Flowseal upstream and release
 
 on:
   schedule:
     # GitHub Actions uses UTC. Poll away from the busiest start-of-hour window.
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      release_current:
+        description: Build or finish the portable release for the current Flowseal revision
+        required: true
+        type: boolean
+        default: true
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sync-flowseal-main
@@ -20,10 +26,16 @@ env:
   SYNC_STATE_FILE: .github/upstream-sync-base
 
 jobs:
-  sync:
+  prepare:
     if: github.repository == 'lolososka/zapret-discord-youtube'
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      fork_head: ${{ steps.sync.outputs.fork_head }}
+      fork_commit: ${{ steps.create-sync.outputs.fork_commit || steps.sync.outputs.fork_head }}
+      upstream_sha: ${{ steps.sync.outputs.upstream_sha }}
+      release_needed: ${{ steps.release-gate.outputs.needed }}
 
     steps:
       - name: Checkout the complete fork history
@@ -76,87 +88,196 @@ jobs:
             exit 1
           fi
 
-          if [ "$LAST_SYNC" = "$UPSTREAM_SHA" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "fork_head=$FORK_HEAD" >> "$GITHUB_OUTPUT"
-            echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
-            echo "### Flowseal upstream is already synchronized" \
-              >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
+          CHANGED=false
+          if [ "$LAST_SYNC" != "$UPSTREAM_SHA" ]; then
+            PATCH_FILE="$RUNNER_TEMP/flowseal-upstream.patch"
+            git diff --binary --full-index "$LAST_SYNC" "$UPSTREAM_SHA" -- \
+              . \
+              ":(exclude)gui/**" \
+              ":(exclude).github/**" \
+              ":(exclude)README.md" \
+              ":(exclude).gitignore" \
+              > "$PATCH_FILE"
 
-          PATCH_FILE="$RUNNER_TEMP/flowseal-upstream.patch"
-          git diff --binary --full-index "$LAST_SYNC" "$UPSTREAM_SHA" -- \
-            . \
-            ":(exclude)gui/**" \
-            ":(exclude).github/**" \
-            ":(exclude)README.md" \
-            ":(exclude).gitignore" \
-            > "$PATCH_FILE"
+            if [ -s "$PATCH_FILE" ]; then
+              if ! git apply --index --3way --whitespace=nowarn "$PATCH_FILE"; then
+                {
+                  echo "### Upstream changes need manual conflict resolution"
+                  echo
+                  echo "No commit was pushed. Current checkout status:"
+                  echo '```text'
+                  git status --short
+                  echo '```'
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+            fi
 
-          if [ -s "$PATCH_FILE" ]; then
-            if ! git apply --index --3way --whitespace=nowarn "$PATCH_FILE"; then
-              {
-                echo "### Upstream changes need manual conflict resolution"
-                echo
-                echo "No commit was pushed. Current checkout status:"
-                echo '```text'
-                git status --short
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
+            printf '%s\n' "$UPSTREAM_SHA" > "$SYNC_STATE_FILE"
+            git add "$SYNC_STATE_FILE"
+
+            PROTECTED_CHANGES="$(
+              git diff --cached --name-only -- \
+                .github gui README.md .gitignore |
+                grep -v '^.github/upstream-sync-base$' || true
+            )"
+            if [ -n "$PROTECTED_CHANGES" ]; then
+              echo "Fork-owned files changed unexpectedly:" >&2
+              echo "$PROTECTED_CHANGES" >&2
               exit 1
             fi
+
+            git diff --cached --check
+            CHANGED=true
           fi
 
-          printf '%s\n' "$UPSTREAM_SHA" > "$SYNC_STATE_FILE"
-          git add "$SYNC_STATE_FILE"
-
-          PROTECTED_CHANGES="$(
-            git diff --cached --name-only -- \
-              .github gui README.md .gitignore |
-              grep -v '^.github/upstream-sync-base$' || true
+          if [ ! -f .service/version.txt ]; then
+            echo "Flowseal version file is missing." >&2
+            exit 1
+          fi
+          VERSION="$(
+            head -n 1 .service/version.txt |
+              tr -d '\r\n[:space:]'
           )"
-          if [ -n "$PROTECTED_CHANGES" ]; then
-            echo "Fork-owned files changed unexpectedly:" >&2
-            echo "$PROTECTED_CHANGES" >&2
+          if ! [[ "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]]; then
+            echo "Invalid Flowseal version: $VERSION" >&2
             exit 1
           fi
 
-          VERSION="$UPSTREAM_SHORT"
-          if [ -f .service/version.txt ]; then
-            CANDIDATE="$(
-              head -n 1 .service/version.txt |
-                tr -cd '0-9A-Za-z._+-'
-            )"
-            if [ -n "$CANDIDATE" ]; then
-              VERSION="$CANDIDATE"
-            fi
+          GUI_VERSION="$(
+            sed -n \
+              's:.*<Version>\([^<]*\)</Version>.*:\1:p' \
+              gui/ZapretGui/ZapretGui.csproj |
+              head -n 1 |
+              tr -d '\r\n[:space:]'
+          )"
+          if ! [[ "$GUI_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]]; then
+            echo "Invalid GUI version: $GUI_VERSION" >&2
+            exit 1
           fi
 
-          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
           echo "fork_head=$FORK_HEAD" >> "$GITHUB_OUTPUT"
           echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
           echo "upstream_short=$UPSTREAM_SHORT" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "gui_version=$GUI_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "$CHANGED" = false ]; then
+            echo "### Flowseal upstream is already synchronized" \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Decide whether the release needs reconciliation
+        id: release-gate
+        shell: pwsh
+        env:
+          CHANGED: ${{ steps.sync.outputs.changed }}
+          MANUAL_RELEASE: ${{ inputs.release_current || false }}
+          GUI_VERSION: ${{ steps.sync.outputs.gui_version }}
+          UPSTREAM_VERSION: ${{ steps.sync.outputs.version }}
+          UPSTREAM_SHORT: ${{ steps.sync.outputs.upstream_short }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ($env:CHANGED -eq 'true' -or $env:MANUAL_RELEASE -eq 'true') {
+            "needed=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $tag = "gui-v$env:GUI_VERSION-flowseal-v$env:UPSTREAM_VERSION-u$env:UPSTREAM_SHORT"
+          $zipName = "zapret-control-center-$env:GUI_VERSION-flowseal-$env:UPSTREAM_VERSION-win-x64.zip"
+          $requiredNames = @($zipName, 'ZapretGUI.exe', 'SHA256SUMS.txt')
+          $headers = @{
+            Accept = 'application/vnd.github+json'
+            'User-Agent' = 'zapret-control-center-release-check'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $encodedTag = [Uri]::EscapeDataString($tag)
+          $releaseUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$encodedTag"
+
+          try {
+            $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers
+          }
+          catch {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+            if ($statusCode -eq 404) {
+              "needed=true" >> $env:GITHUB_OUTPUT
+              exit 0
+            }
+            throw
+          }
+
+          if ($release.draft) {
+            "needed=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $assets = @($release.assets)
+          foreach ($requiredName in $requiredNames) {
+            $matches = @($assets | Where-Object name -eq $requiredName)
+            if ($matches.Count -ne 1 -or [long]$matches[0].size -le 0) {
+              throw "Published release $tag has a missing, duplicate, or empty asset: $requiredName"
+            }
+            if ([string]$matches[0].digest -notmatch '^sha256:[0-9a-f]{64}$') {
+              throw "Published release $tag has no verifiable SHA-256 digest for $requiredName."
+            }
+          }
+
+          $checksumAsset = $assets |
+            Where-Object name -eq 'SHA256SUMS.txt' |
+            Select-Object -First 1
+          $checksumText = (
+            Invoke-WebRequest -Uri $checksumAsset.browser_download_url -Headers $headers
+          ).Content
+          $checksumMap = @{}
+          foreach ($line in ($checksumText -split "\r?\n")) {
+            if ($line -match '^([0-9a-fA-F]{64})  (.+)$') {
+              $checksumMap[$Matches[2]] = $Matches[1].ToLowerInvariant()
+            }
+          }
+          foreach ($assetName in @($zipName, 'ZapretGUI.exe')) {
+            if (-not $checksumMap.ContainsKey($assetName)) {
+              throw "Published release $tag does not list $assetName in SHA256SUMS.txt."
+            }
+            $asset = $assets | Where-Object name -eq $assetName | Select-Object -First 1
+            $apiHash = ([string]$asset.digest).Substring(7).ToLowerInvariant()
+            if ($checksumMap[$assetName] -ne $apiHash) {
+              throw "Published release $tag has a checksum mismatch for $assetName."
+            }
+          }
+
+          "needed=false" >> $env:GITHUB_OUTPUT
+          "### Portable release already verified" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "[$tag]($($release.html_url)) contains all verified assets." >> $env:GITHUB_STEP_SUMMARY
 
       - name: Set up .NET
-        if: steps.sync.outputs.changed == 'true'
+        if: steps.release-gate.outputs.needed == 'true'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 8.0.x
 
-      - name: Validate upstream layout
-        if: steps.sync.outputs.changed == 'true'
+      - name: Validate release layout
+        if: steps.release-gate.outputs.needed == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
 
           $requiredPaths = @(
             'bin/winws.exe',
+            'bin/WinDivert.dll',
+            'bin/WinDivert64.sys',
             'lists',
+            'utils',
             '.service/version.txt',
+            'service.bat',
+            'LICENSE.txt',
+            'gui/LICENSE',
+            'gui/THIRD_PARTY_NOTICES.md',
             'gui/ZapretGui/ZapretGui.csproj',
-            'gui/build.ps1'
+            'gui/build.ps1',
+            'gui/package-release.ps1'
           )
           foreach ($path in $requiredPaths) {
             if (-not (Test-Path -LiteralPath $path)) {
@@ -170,7 +291,7 @@ jobs:
           }
 
       - name: Publish GUI compatibility build
-        if: steps.sync.outputs.changed == 'true'
+        if: steps.release-gate.outputs.needed == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -184,49 +305,495 @@ jobs:
             throw 'The compatibility build unexpectedly modified tracked files.'
           }
 
-      - name: Commit and push synchronized upstream
+      - name: Create the verified sync commit
+        id: create-sync
         if: steps.sync.outputs.changed == 'true'
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-          FORK_HEAD: ${{ steps.sync.outputs.fork_head }}
-          UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
           UPSTREAM_SHORT: ${{ steps.sync.outputs.upstream_short }}
           UPSTREAM_VERSION: ${{ steps.sync.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-
-          # Refuse to overwrite a commit pushed while the compatibility build ran.
-          git fetch origin $env:TARGET_BRANCH --prune
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Could not refresh origin before push.'
-          }
-          $currentOrigin = (git rev-parse "origin/$env:TARGET_BRANCH").Trim()
-          if ($currentOrigin -ne $env:FORK_HEAD) {
-            throw 'main changed during the sync run. The next run will retry safely.'
-          }
 
           git commit -m "chore(upstream): sync Flowseal $env:UPSTREAM_VERSION ($env:UPSTREAM_SHORT)"
           if ($LASTEXITCODE -ne 0) {
             throw 'Could not create the upstream sync commit.'
           }
           $syncCommit = (git rev-parse HEAD).Trim()
+          "fork_commit=$syncCommit" >> $env:GITHUB_OUTPUT
 
-          # The write token is exposed only after all upstream-controlled build steps.
+      - name: Package the portable release
+        if: steps.release-gate.outputs.needed == 'true'
+        shell: pwsh
+        env:
+          UPSTREAM_VERSION: ${{ steps.sync.outputs.version }}
+          UPSTREAM_COMMIT: ${{ steps.sync.outputs.upstream_sha }}
+          FORK_COMMIT: ${{ steps.create-sync.outputs.fork_commit || steps.sync.outputs.fork_head }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'handoff\release'
+          & ./gui/package-release.ps1 `
+            -OutputDir $releaseDir `
+            -UpstreamVersion $env:UPSTREAM_VERSION `
+            -UpstreamCommit $env:UPSTREAM_COMMIT `
+            -ForkCommit $env:FORK_COMMIT
+
+      - name: Bundle the verified sync commit
+        if: steps.sync.outputs.changed == 'true'
+        shell: pwsh
+        env:
+          FORK_HEAD: ${{ steps.sync.outputs.fork_head }}
+          FORK_COMMIT: ${{ steps.create-sync.outputs.fork_commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $handoffDir = Join-Path $env:RUNNER_TEMP 'handoff'
+          [IO.Directory]::CreateDirectory($handoffDir) | Out-Null
+          $bundlePath = Join-Path $handoffDir 'sync.bundle'
+
+          git bundle create $bundlePath HEAD "^$env:FORK_HEAD"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not create the verified sync bundle.'
+          }
+          $bundleHead = (
+            git bundle list-heads $bundlePath |
+              Select-Object -First 1
+          ).Split(' ')[0]
+          if ($bundleHead -ne $env:FORK_COMMIT) {
+            throw "Sync bundle head mismatch: expected $env:FORK_COMMIT, got $bundleHead."
+          }
+
+      - name: Upload the verified handoff
+        if: steps.release-gate.outputs.needed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prepared-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/handoff
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.release_needed == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout the current target branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ env.TARGET_BRANCH }}
+          persist-credentials: false
+
+      - name: Download the verified handoff
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: prepared-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/handoff
+
+      - name: Validate and publish the prepared sync commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ needs.prepare.outputs.changed }}
+          FORK_HEAD: ${{ needs.prepare.outputs.fork_head }}
+          FORK_COMMIT: ${{ needs.prepare.outputs.fork_commit }}
+          UPSTREAM_SHA: ${{ needs.prepare.outputs.upstream_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          foreach ($sha in @(
+            $env:FORK_HEAD,
+            $env:FORK_COMMIT,
+            $env:UPSTREAM_SHA
+          )) {
+            if ($sha -notmatch '^[0-9a-f]{40}$') {
+              throw "Invalid handoff commit SHA: $sha"
+            }
+          }
+
+          git fetch origin $env:TARGET_BRANCH --prune
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not refresh origin before publication.'
+          }
+          $currentOrigin = (git rev-parse "origin/$env:TARGET_BRANCH").Trim()
+          if ($currentOrigin -ne $env:FORK_HEAD) {
+            throw 'main changed during preparation. The next run will retry safely.'
+          }
+
+          if ($env:CHANGED -ne 'true') {
+            if ($env:FORK_COMMIT -ne $env:FORK_HEAD) {
+              throw 'No-change handoff unexpectedly changed the source commit.'
+            }
+            exit 0
+          }
+
+          $bundlePath = Join-Path $env:RUNNER_TEMP 'handoff\sync.bundle'
+          if (-not (Test-Path -LiteralPath $bundlePath -PathType Leaf)) {
+            throw 'The sync bundle is missing from the handoff.'
+          }
+
+          git bundle verify $bundlePath
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The sync bundle failed verification.'
+          }
+          $bundleHead = (
+            git bundle list-heads $bundlePath |
+              Select-Object -First 1
+          ).Split(' ')[0]
+          if ($bundleHead -ne $env:FORK_COMMIT) {
+            throw "Sync bundle head mismatch: expected $env:FORK_COMMIT, got $bundleHead."
+          }
+
+          git fetch $bundlePath HEAD:refs/remotes/prepared/sync
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not import the prepared sync commit.'
+          }
+
+          $parents = @(
+            (git show -s --format=%P $env:FORK_COMMIT).Trim().Split(
+              @(' '),
+              [StringSplitOptions]::RemoveEmptyEntries
+            )
+          )
+          if ($parents.Count -ne 1 -or $parents[0] -ne $env:FORK_HEAD) {
+            throw 'The prepared sync commit is not a single fast-forward commit.'
+          }
+
+          $changedPaths = @(
+            git diff --name-only "$env:FORK_HEAD..$env:FORK_COMMIT"
+          )
+          if ($LASTEXITCODE -ne 0 -or $changedPaths.Count -eq 0) {
+            throw 'The prepared sync commit contains no verifiable changes.'
+          }
+          $protectedPaths = @(
+            $changedPaths |
+              Where-Object {
+                (
+                  $_ -like '.github/*' -and
+                  $_ -ne '.github/upstream-sync-base'
+                ) -or
+                $_ -like 'gui/*' -or
+                $_ -eq 'README.md' -or
+                $_ -eq '.gitignore'
+              }
+          )
+          if ($protectedPaths.Count -gt 0) {
+            throw "Prepared commit changed fork-owned files: $($protectedPaths -join ', ')"
+          }
+
+          $savedUpstream = (
+            git show "${env:FORK_COMMIT}:.github/upstream-sync-base"
+          ).Trim()
+          if ($savedUpstream -ne $env:UPSTREAM_SHA) {
+            throw 'The prepared commit has the wrong upstream sync marker.'
+          }
+
           $credential = [Convert]::ToBase64String(
             [Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GH_TOKEN")
           )
           Write-Output "::add-mask::$credential"
           git -c "http.extraheader=AUTHORIZATION: basic $credential" `
-            push "https://github.com/$env:GITHUB_REPOSITORY.git" "HEAD:$env:TARGET_BRANCH"
+            push "https://github.com/$env:GITHUB_REPOSITORY.git" `
+            "$env:FORK_COMMIT`:$env:TARGET_BRANCH"
           if ($LASTEXITCODE -ne 0) {
-            throw 'Could not push the upstream sync commit.'
+            git fetch origin $env:TARGET_BRANCH --prune
+            $currentOrigin = (git rev-parse "origin/$env:TARGET_BRANCH").Trim()
+            if ($currentOrigin -ne $env:FORK_COMMIT) {
+              throw 'Could not push the upstream sync commit.'
+            }
+            Write-Warning 'The push response was ambiguous, but origin contains the sync commit.'
           }
 
-          "### Flowseal upstream synchronized" |
-            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "- Upstream: ``$env:UPSTREAM_SHA``" |
-            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          "- Fork commit: [$syncCommit](https://github.com/$env:GITHUB_REPOSITORY/commit/$syncCommit)" |
-            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "### Flowseal upstream synchronized" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "- Upstream: ``$env:UPSTREAM_SHA``" >> $env:GITHUB_STEP_SUMMARY
+          "- Fork commit: [$env:FORK_COMMIT](https://github.com/$env:GITHUB_REPOSITORY/commit/$env:FORK_COMMIT)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Publish or reconcile the GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ needs.prepare.outputs.changed }}
+          EXPECTED_FORK_COMMIT: ${{ needs.prepare.outputs.fork_commit }}
+          EXPECTED_UPSTREAM_COMMIT: ${{ needs.prepare.outputs.upstream_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          function Invoke-GhApi {
+            param([Parameter(Mandatory)][string]$Endpoint)
+            $raw = & gh api $Endpoint
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub API request failed: $Endpoint"
+            }
+            return (($raw -join "`n") | ConvertFrom-Json)
+          }
+
+          function Try-GhApi {
+            param([Parameter(Mandatory)][string]$Endpoint)
+            $raw = & gh api $Endpoint 2>$null
+            if ($LASTEXITCODE -ne 0) {
+              return $null
+            }
+            return (($raw -join "`n") | ConvertFrom-Json)
+          }
+
+          function Resolve-TagCommit {
+            param(
+              [Parameter(Mandatory)][string]$Repository,
+              [Parameter(Mandatory)][string]$Tag
+            )
+            $encodedTag = [Uri]::EscapeDataString($Tag)
+            $reference = Try-GhApi "repos/$Repository/git/ref/tags/$encodedTag"
+            if ($null -eq $reference) {
+              return $null
+            }
+
+            $objectType = [string]$reference.object.type
+            $objectSha = [string]$reference.object.sha
+            while ($objectType -eq 'tag') {
+              $tagObject = Invoke-GhApi "repos/$Repository/git/tags/$objectSha"
+              $objectType = [string]$tagObject.object.type
+              $objectSha = [string]$tagObject.object.sha
+            }
+            if ($objectType -ne 'commit') {
+              throw "Tag $Tag points to unsupported object type: $objectType"
+            }
+            return $objectSha
+          }
+
+          function Assert-ReleaseAssets {
+            param(
+              [Parameter(Mandatory)]$Release,
+              [Parameter(Mandatory)]$Metadata,
+              [Parameter(Mandatory)][bool]$CompareLocal
+            )
+
+            $assets = @($Release.assets)
+            $requiredNames = @(
+              [string]$Metadata.ZipName,
+              [string]$Metadata.ExeName,
+              [string]$Metadata.ChecksumsName
+            )
+            foreach ($requiredName in $requiredNames) {
+              $matches = @($assets | Where-Object name -eq $requiredName)
+              if ($matches.Count -ne 1 -or [long]$matches[0].size -le 0) {
+                throw "Release $($Metadata.Tag) has a missing, duplicate, or empty asset: $requiredName"
+              }
+              if ([string]$matches[0].digest -notmatch '^sha256:[0-9a-f]{64}$') {
+                throw "Release $($Metadata.Tag) has no SHA-256 digest for $requiredName."
+              }
+            }
+
+            $verifyDir = Join-Path $env:RUNNER_TEMP 'verify-release-assets'
+            [IO.Directory]::CreateDirectory($verifyDir) | Out-Null
+            & gh release download $Metadata.Tag `
+              --repo $env:GITHUB_REPOSITORY `
+              --pattern $Metadata.ChecksumsName `
+              --dir $verifyDir `
+              --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not download the published checksum file.'
+            }
+
+            $checksumPath = Join-Path $verifyDir $Metadata.ChecksumsName
+            $checksumMap = @{}
+            foreach ($line in (Get-Content -LiteralPath $checksumPath)) {
+              if ($line -match '^([0-9a-fA-F]{64})  (.+)$') {
+                $checksumMap[$Matches[2]] = $Matches[1].ToLowerInvariant()
+              }
+            }
+
+            $expectedLocal = @{
+              ([string]$Metadata.ZipName) = ([string]$Metadata.ZipSha256).ToLowerInvariant()
+              ([string]$Metadata.ExeName) = ([string]$Metadata.ExeSha256).ToLowerInvariant()
+            }
+            foreach ($assetName in @(
+              [string]$Metadata.ZipName,
+              [string]$Metadata.ExeName
+            )) {
+              if (-not $checksumMap.ContainsKey($assetName)) {
+                throw "SHA256SUMS.txt does not list $assetName."
+              }
+              $asset = $assets |
+                Where-Object name -eq $assetName |
+                Select-Object -First 1
+              $apiHash = ([string]$asset.digest).Substring(7).ToLowerInvariant()
+              if ($checksumMap[$assetName] -ne $apiHash) {
+                throw "Remote checksum mismatch for $assetName."
+              }
+              if ($CompareLocal -and $apiHash -ne $expectedLocal[$assetName]) {
+                throw "Uploaded asset differs from the verified local file: $assetName"
+              }
+            }
+          }
+
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'handoff\release'
+          $metadataPath = Join-Path $releaseDir 'release-metadata.json'
+          $metadata = Get-Content -LiteralPath $metadataPath -Raw |
+            ConvertFrom-Json
+          foreach ($version in @(
+            [string]$metadata.GuiVersion,
+            [string]$metadata.UpstreamVersion
+          )) {
+            if ($version -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$') {
+              throw "Invalid release version in the handoff: $version"
+            }
+          }
+          if (
+            [string]$metadata.ForkCommit -ne $env:EXPECTED_FORK_COMMIT -or
+            [string]$metadata.UpstreamCommit -ne $env:EXPECTED_UPSTREAM_COMMIT
+          ) {
+            throw 'Release metadata does not match the verified prepare-job outputs.'
+          }
+
+          $upstreamShort = ([string]$metadata.UpstreamCommit).Substring(0, 12)
+          $expectedTag = "gui-v$($metadata.GuiVersion)-flowseal-v$($metadata.UpstreamVersion)-u$upstreamShort"
+          $expectedZipName = "zapret-control-center-$($metadata.GuiVersion)-flowseal-$($metadata.UpstreamVersion)-win-x64.zip"
+          if (
+            [string]$metadata.Tag -ne $expectedTag -or
+            [string]$metadata.ZipName -ne $expectedZipName -or
+            [string]$metadata.ExeName -ne 'ZapretGUI.exe' -or
+            [string]$metadata.ChecksumsName -ne 'SHA256SUMS.txt'
+          ) {
+            throw 'Release metadata contains unexpected tag or asset names.'
+          }
+
+          $metadata.ZipPath = Join-Path $releaseDir $metadata.ZipName
+          $metadata.ExePath = Join-Path $releaseDir $metadata.ExeName
+          $metadata.ChecksumsPath = Join-Path $releaseDir $metadata.ChecksumsName
+          $metadata.NotesPath = Join-Path $releaseDir 'RELEASE_NOTES.md'
+          foreach ($assetPath in @(
+            [string]$metadata.ZipPath,
+            [string]$metadata.ExePath,
+            [string]$metadata.ChecksumsPath,
+            [string]$metadata.NotesPath
+          )) {
+            if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+              throw "Prepared release file is missing: $assetPath"
+            }
+          }
+
+          $localZipHash = (
+            Get-FileHash -LiteralPath $metadata.ZipPath -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
+          $localExeHash = (
+            Get-FileHash -LiteralPath $metadata.ExePath -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
+          if (
+            $localZipHash -ne ([string]$metadata.ZipSha256).ToLowerInvariant() -or
+            $localExeHash -ne ([string]$metadata.ExeSha256).ToLowerInvariant()
+          ) {
+            throw 'Downloaded release files do not match their prepare-job hashes.'
+          }
+
+          $repo = $env:GITHUB_REPOSITORY
+          $encodedTag = [Uri]::EscapeDataString([string]$metadata.Tag)
+          $releaseEndpoint = "repos/$repo/releases/tags/$encodedTag"
+
+          $release = Try-GhApi $releaseEndpoint
+          if ($null -ne $release -and -not $release.draft) {
+            Assert-ReleaseAssets `
+              -Release $release `
+              -Metadata $metadata `
+              -CompareLocal $false
+            "### Portable release already published and verified" >> $env:GITHUB_STEP_SUMMARY
+            "" >> $env:GITHUB_STEP_SUMMARY
+            "[$($metadata.Tag)]($($release.html_url))" >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          if ($env:CHANGED -ne 'true') {
+            git fetch origin $env:TARGET_BRANCH --prune
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not refresh main before creating the release tag.'
+            }
+            $currentOrigin = (git rev-parse "origin/$env:TARGET_BRANCH").Trim()
+            if ($currentOrigin -ne [string]$metadata.ForkCommit) {
+              throw 'main changed during the manual build. The next run will retry safely.'
+            }
+          }
+
+          $remoteCommit = Invoke-GhApi "repos/$repo/commits/$($metadata.ForkCommit)"
+          if ([string]$remoteCommit.sha -ne [string]$metadata.ForkCommit) {
+            throw 'The release source commit is not available on GitHub.'
+          }
+
+          $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
+          if ($null -ne $tagCommit -and $tagCommit -ne $metadata.ForkCommit) {
+            throw "Tag $($metadata.Tag) already points to $tagCommit; refusing to move it."
+          }
+
+          if ($null -eq $release) {
+            $createArgs = @(
+              'release', 'create', [string]$metadata.Tag,
+              '--repo', $repo,
+              '--title', [string]$metadata.Title,
+              '--notes-file', [string]$metadata.NotesPath,
+              '--draft'
+            )
+            if ($null -eq $tagCommit) {
+              $createArgs += @('--target', [string]$metadata.ForkCommit)
+            }
+            else {
+              $createArgs += '--verify-tag'
+            }
+            & gh @createArgs
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Could not create the draft release.'
+            }
+          }
+
+          $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
+          if ($tagCommit -ne $metadata.ForkCommit) {
+            throw "Release tag target mismatch: expected $($metadata.ForkCommit), got $tagCommit."
+          }
+
+          $release = Invoke-GhApi $releaseEndpoint
+          if (-not $release.draft) {
+            throw 'Release became public before its assets were verified.'
+          }
+
+          & gh release upload $metadata.Tag `
+            $metadata.ZipPath `
+            $metadata.ExePath `
+            $metadata.ChecksumsPath `
+            --repo $repo `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not upload the release assets.'
+          }
+
+          $release = Invoke-GhApi $releaseEndpoint
+          Assert-ReleaseAssets `
+            -Release $release `
+            -Metadata $metadata `
+            -CompareLocal $true
+
+          & gh release edit $metadata.Tag `
+            --repo $repo `
+            --draft=false `
+            --latest
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not publish the verified release.'
+          }
+
+          $release = Invoke-GhApi $releaseEndpoint
+          if ($release.draft) {
+            throw 'The release is still a draft after publication.'
+          }
+          Assert-ReleaseAssets `
+            -Release $release `
+            -Metadata $metadata `
+            -CompareLocal $true
+
+          "### Portable release published" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "[$($metadata.Tag)]($($release.html_url))" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "- ZIP SHA-256: ``$($metadata.ZipSha256)``" >> $env:GITHUB_STEP_SUMMARY
+          "- EXE SHA-256: ``$($metadata.ExeSha256)``" >> $env:GITHUB_STEP_SUMMARY
