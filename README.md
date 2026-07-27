@@ -14,10 +14,12 @@
 > стратегий, автоподбора, диагностики, управления службой и пользовательскими списками.
 > Flowseal не связан с этой оболочкой и не одобрял её как официальную сборку.
 > Исходники и инструкция находятся в [`gui/`](./gui/README.md).
-> Готовый EXE: [Zapret Control Center v1.10.0](https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.10.0).
+> Готовая portable-сборка: [последний автоматический релиз](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
 >
 > [![Sync Flowseal upstream](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml)
 > Изменения оригинального проекта проверяются и переносятся в форк каждые 6 часов.
+> После успешной проверки автоматически собираются ZIP с GUI и отдельный `ZapretGUI.exe`;
+> их SHA-256 опубликованы рядом в `SHA256SUMS.txt`.
 
 > [!CAUTION]
 >
