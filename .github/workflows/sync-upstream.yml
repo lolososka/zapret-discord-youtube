@@ -1,0 +1,232 @@
+name: Sync Flowseal upstream
+
+on:
+  schedule:
+    # GitHub Actions uses UTC. Poll away from the busiest start-of-hour window.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-flowseal-main
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/Flowseal/zapret-discord-youtube.git
+  UPSTREAM_BRANCH: main
+  TARGET_BRANCH: main
+  SYNC_STATE_FILE: .github/upstream-sync-base
+
+jobs:
+  sync:
+    if: github.repository == 'lolososka/zapret-discord-youtube'
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout the complete fork history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ env.TARGET_BRANCH }}
+          persist-credentials: false
+
+      - name: Prepare upstream changes
+        id: sync
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          FORK_HEAD="$(git rev-parse HEAD)"
+          if git remote get-url upstream >/dev/null 2>&1; then
+            git remote set-url upstream "$UPSTREAM_URL"
+          else
+            git remote add upstream "$UPSTREAM_URL"
+          fi
+
+          git fetch --no-tags --prune upstream \
+            "+refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+
+          UPSTREAM_REF="refs/remotes/upstream/${UPSTREAM_BRANCH}"
+          UPSTREAM_SHA="$(git rev-parse "$UPSTREAM_REF")"
+          UPSTREAM_SHORT="$(git rev-parse --short=12 "$UPSTREAM_REF")"
+
+          if [ ! -f "$SYNC_STATE_FILE" ]; then
+            echo "Missing sync state file: $SYNC_STATE_FILE" >&2
+            exit 1
+          fi
+
+          LAST_SYNC="$(tr -d '\r\n[:space:]' < "$SYNC_STATE_FILE")"
+          if ! [[ "$LAST_SYNC" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid upstream commit in $SYNC_STATE_FILE: $LAST_SYNC" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "${LAST_SYNC}^{commit}" 2>/dev/null; then
+            echo "Saved upstream commit is not available: $LAST_SYNC" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$LAST_SYNC" "$UPSTREAM_SHA"; then
+            echo "Flowseal/main history was rewritten; refusing automatic sync." >&2
+            exit 1
+          fi
+
+          if [ "$LAST_SYNC" = "$UPSTREAM_SHA" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "fork_head=$FORK_HEAD" >> "$GITHUB_OUTPUT"
+            echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+            echo "### Flowseal upstream is already synchronized" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          PATCH_FILE="$RUNNER_TEMP/flowseal-upstream.patch"
+          git diff --binary --full-index "$LAST_SYNC" "$UPSTREAM_SHA" -- \
+            . \
+            ":(exclude)gui/**" \
+            ":(exclude).github/**" \
+            ":(exclude)README.md" \
+            ":(exclude).gitignore" \
+            > "$PATCH_FILE"
+
+          if [ -s "$PATCH_FILE" ]; then
+            if ! git apply --index --3way --whitespace=nowarn "$PATCH_FILE"; then
+              {
+                echo "### Upstream changes need manual conflict resolution"
+                echo
+                echo "No commit was pushed. Current checkout status:"
+                echo '```text'
+                git status --short
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          fi
+
+          printf '%s\n' "$UPSTREAM_SHA" > "$SYNC_STATE_FILE"
+          git add "$SYNC_STATE_FILE"
+
+          PROTECTED_CHANGES="$(
+            git diff --cached --name-only -- \
+              .github gui README.md .gitignore |
+              grep -v '^.github/upstream-sync-base$' || true
+          )"
+          if [ -n "$PROTECTED_CHANGES" ]; then
+            echo "Fork-owned files changed unexpectedly:" >&2
+            echo "$PROTECTED_CHANGES" >&2
+            exit 1
+          fi
+
+          VERSION="$UPSTREAM_SHORT"
+          if [ -f .service/version.txt ]; then
+            CANDIDATE="$(
+              head -n 1 .service/version.txt |
+                tr -cd '0-9A-Za-z._+-'
+            )"
+            if [ -n "$CANDIDATE" ]; then
+              VERSION="$CANDIDATE"
+            fi
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "fork_head=$FORK_HEAD" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+          echo "upstream_short=$UPSTREAM_SHORT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up .NET
+        if: steps.sync.outputs.changed == 'true'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Validate upstream layout
+        if: steps.sync.outputs.changed == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $requiredPaths = @(
+            'bin/winws.exe',
+            'lists',
+            '.service/version.txt',
+            'gui/ZapretGui/ZapretGui.csproj',
+            'gui/build.ps1'
+          )
+          foreach ($path in $requiredPaths) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Required path is missing after upstream sync: $path"
+            }
+          }
+
+          $strategies = @(Get-ChildItem -LiteralPath . -Filter 'general*.bat' -File)
+          if ($strategies.Count -eq 0) {
+            throw 'No general*.bat strategies found after upstream sync.'
+          }
+
+      - name: Publish GUI compatibility build
+        if: steps.sync.outputs.changed == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./gui/build.ps1 -NoDeploy
+          if ($LASTEXITCODE -ne 0) {
+            throw "GUI publish failed with exit code $LASTEXITCODE."
+          }
+
+          git diff --quiet
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The compatibility build unexpectedly modified tracked files.'
+          }
+
+      - name: Commit and push synchronized upstream
+        if: steps.sync.outputs.changed == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORK_HEAD: ${{ steps.sync.outputs.fork_head }}
+          UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
+          UPSTREAM_SHORT: ${{ steps.sync.outputs.upstream_short }}
+          UPSTREAM_VERSION: ${{ steps.sync.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Refuse to overwrite a commit pushed while the compatibility build ran.
+          git fetch origin $env:TARGET_BRANCH --prune
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not refresh origin before push.'
+          }
+          $currentOrigin = (git rev-parse "origin/$env:TARGET_BRANCH").Trim()
+          if ($currentOrigin -ne $env:FORK_HEAD) {
+            throw 'main changed during the sync run. The next run will retry safely.'
+          }
+
+          git commit -m "chore(upstream): sync Flowseal $env:UPSTREAM_VERSION ($env:UPSTREAM_SHORT)"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not create the upstream sync commit.'
+          }
+          $syncCommit = (git rev-parse HEAD).Trim()
+
+          # The write token is exposed only after all upstream-controlled build steps.
+          $credential = [Convert]::ToBase64String(
+            [Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GH_TOKEN")
+          )
+          Write-Output "::add-mask::$credential"
+          git -c "http.extraheader=AUTHORIZATION: basic $credential" `
+            push "https://github.com/$env:GITHUB_REPOSITORY.git" "HEAD:$env:TARGET_BRANCH"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not push the upstream sync commit.'
+          }
+
+          "### Flowseal upstream synchronized" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- Upstream: ``$env:UPSTREAM_SHA``" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "- Fork commit: [$syncCommit](https://github.com/$env:GITHUB_REPOSITORY/commit/$syncCommit)" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
