@@ -397,29 +397,35 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
     ) -join "`n"
     Write-Utf8NoBom -Path $checksumsPath -Value ($checksums + "`n")
 
-    $releaseNotes = @"
+    $releaseNotes = @'
 ## Готовая portable-сборка
 
 Это **неофициальный community fork**. Flowseal не связан с Zapret Control Center
 и не одобрял эту сборку как официальную.
 
-1. Скачайте `$zipName`.
+1. Скачайте `__ZIP_NAME__`.
 2. Распакуйте архив в новую папку.
 3. Запустите `ZapretGUI.exe` от имени администратора.
 
 В архив уже входят GUI, Flowseal-стратегии, `bin`, `lists`, `utils` и `service.bat`.
 Отдельный `ZapretGUI.exe` предназначен для ручного обновления уже существующей папки.
-Контрольные суммы находятся в `$checksumsName`.
+Контрольные суммы находятся в `__CHECKSUMS_NAME__`.
 
 ### Состав сборки
 
-- Zapret Control Center: `$GuiVersion`
-- Flowseal: `$UpstreamVersion`
-- Flowseal commit: `$UpstreamCommit`
-- Fork commit: `$ForkCommit`
+- Zapret Control Center: `__GUI_VERSION__`
+- Flowseal: `__UPSTREAM_VERSION__`
+- Flowseal commit: `__UPSTREAM_COMMIT__`
+- Fork commit: `__FORK_COMMIT__`
 
 Исходный проект: https://github.com/Flowseal/zapret-discord-youtube
-"@
+'@
+    $releaseNotes = $releaseNotes.Replace('__ZIP_NAME__', $zipName)
+    $releaseNotes = $releaseNotes.Replace('__CHECKSUMS_NAME__', $checksumsName)
+    $releaseNotes = $releaseNotes.Replace('__GUI_VERSION__', $GuiVersion)
+    $releaseNotes = $releaseNotes.Replace('__UPSTREAM_VERSION__', $UpstreamVersion)
+    $releaseNotes = $releaseNotes.Replace('__UPSTREAM_COMMIT__', $UpstreamCommit)
+    $releaseNotes = $releaseNotes.Replace('__FORK_COMMIT__', $ForkCommit)
     Write-Utf8NoBom -Path $notesPath -Value ($releaseNotes.Trim() + "`n")
 
     $metadata = [ordered]@{
