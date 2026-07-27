@@ -561,6 +561,21 @@ jobs:
             return $matches[0]
           }
 
+          function Wait-ReleaseByTag {
+            param(
+              [Parameter(Mandatory)][string]$Repository,
+              [Parameter(Mandatory)][string]$Tag
+            )
+            for ($attempt = 1; $attempt -le 6; $attempt++) {
+              $release = Get-ReleaseByTag -Repository $Repository -Tag $Tag
+              if ($null -ne $release) {
+                return $release
+              }
+              Start-Sleep -Seconds 2
+            }
+            throw "Release did not appear in the GitHub API: $Tag"
+          }
+
           function Resolve-TagCommit {
             param(
               [Parameter(Mandatory)][string]$Repository,
@@ -608,20 +623,40 @@ jobs:
               }
             }
 
-            $verifyDir = Join-Path $env:RUNNER_TEMP 'verify-release-assets'
-            [IO.Directory]::CreateDirectory($verifyDir) | Out-Null
-            & gh release download $Metadata.Tag `
-              --repo $env:GITHUB_REPOSITORY `
-              --pattern $Metadata.ChecksumsName `
-              --dir $verifyDir `
-              --clobber
-            if ($LASTEXITCODE -ne 0) {
-              throw 'Could not download the published checksum file.'
+            $checksumMap = @{}
+            if ($CompareLocal) {
+              $checksumPath = [string]$Metadata.ChecksumsPath
+              $checksumAsset = $assets |
+                Where-Object name -eq $Metadata.ChecksumsName |
+                Select-Object -First 1
+              $localChecksumHash = (
+                Get-FileHash -LiteralPath $checksumPath -Algorithm SHA256
+              ).Hash.ToLowerInvariant()
+              $remoteChecksumHash = (
+                [string]$checksumAsset.digest
+              ).Substring(7).ToLowerInvariant()
+              if ($localChecksumHash -ne $remoteChecksumHash) {
+                throw 'Uploaded SHA256SUMS.txt differs from the verified local file.'
+              }
+              $checksumLines = Get-Content -LiteralPath $checksumPath
+            }
+            else {
+              $checksumAsset = $assets |
+                Where-Object name -eq $Metadata.ChecksumsName |
+                Select-Object -First 1
+              $headers = @{
+                Accept = 'application/octet-stream'
+                'User-Agent' = 'zapret-control-center-release-check'
+              }
+              $checksumText = (
+                Invoke-WebRequest `
+                  -Uri $checksumAsset.browser_download_url `
+                  -Headers $headers
+              ).Content
+              $checksumLines = $checksumText -split "\r?\n"
             }
 
-            $checksumPath = Join-Path $verifyDir $Metadata.ChecksumsName
-            $checksumMap = @{}
-            foreach ($line in (Get-Content -LiteralPath $checksumPath)) {
+            foreach ($line in $checksumLines) {
               if ($line -match '^([0-9a-fA-F]{64})  (.+)$') {
                 $checksumMap[$Matches[2]] = $Matches[1].ToLowerInvariant()
               }
@@ -765,17 +800,27 @@ jobs:
             }
           }
 
-          $release = Get-ReleaseByTag -Repository $repo -Tag $metadata.Tag
-          if ($null -eq $release) {
-            throw 'The draft release disappeared after creation.'
-          }
+          $release = Wait-ReleaseByTag -Repository $repo -Tag $metadata.Tag
           if (-not $release.draft) {
             throw 'Release became public before its assets were verified.'
           }
           $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
           if ($null -eq $tagCommit) {
             if ([string]$release.target_commitish -ne [string]$metadata.ForkCommit) {
-              throw "Draft release target mismatch: expected $($metadata.ForkCommit), got $($release.target_commitish)."
+              if (@($release.assets).Count -ne 0) {
+                throw "Non-empty draft target mismatch: expected $($metadata.ForkCommit), got $($release.target_commitish)."
+              }
+              $updatedRaw = & gh api `
+                --method PATCH `
+                "repos/$repo/releases/$($release.id)" `
+                -f "target_commitish=$($metadata.ForkCommit)"
+              if ($LASTEXITCODE -ne 0) {
+                throw 'Could not retarget the empty draft release.'
+              }
+              $release = (($updatedRaw -join "`n") | ConvertFrom-Json)
+              if ([string]$release.target_commitish -ne [string]$metadata.ForkCommit) {
+                throw 'The empty draft release still points to the wrong commit.'
+              }
             }
           }
           elseif ($tagCommit -ne $metadata.ForkCommit) {
@@ -792,10 +837,7 @@ jobs:
             throw 'Could not upload the release assets.'
           }
 
-          $release = Get-ReleaseByTag -Repository $repo -Tag $metadata.Tag
-          if ($null -eq $release) {
-            throw 'The draft release disappeared after asset upload.'
-          }
+          $release = Wait-ReleaseByTag -Repository $repo -Tag $metadata.Tag
           Assert-ReleaseAssets `
             -Release $release `
             -Metadata $metadata `
@@ -809,10 +851,7 @@ jobs:
             throw 'Could not publish the verified release.'
           }
 
-          $release = Get-ReleaseByTag -Repository $repo -Tag $metadata.Tag
-          if ($null -eq $release) {
-            throw 'The release disappeared after publication.'
-          }
+          $release = Wait-ReleaseByTag -Repository $repo -Tag $metadata.Tag
           if ($release.draft) {
             throw 'The release is still a draft after publication.'
           }
