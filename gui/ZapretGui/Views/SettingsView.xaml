@@ -1,0 +1,414 @@
+<UserControl x:Class="ZapretGui.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fx="clr-namespace:ZapretGui.Controls"
+             Background="{StaticResource BrushBgSunken}"
+             FontFamily="{StaticResource FontUI}"
+             FontSize="{StaticResource FontSizeBody}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+
+    <UserControl.Resources>
+
+        <!-- Строка группы: 44 DIP, подпись слева, контрол справа (§8). -->
+        <Style x:Key="RowStyle" TargetType="DockPanel">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="LastChildFill" Value="True" />
+            <Setter Property="fx:Fx.Reveal" Value="True" />
+        </Style>
+
+        <!-- Та же строка, но под кнопки 36 DIP. -->
+        <Style x:Key="ActionRowStyle" TargetType="DockPanel" BasedOn="{StaticResource RowStyle}">
+            <Setter Property="Height" Value="56" />
+        </Style>
+
+        <Style x:Key="RowLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="RowValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="16,0,0,0" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <Style x:Key="GroupCardStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Margin" Value="0,0,0,16" />
+        </Style>
+
+        <!--
+            Образец акцента: 28×28 radius 6, кольцо 1px BrushTextPrimary с отступом 2 у выбранного.
+            Кольцо присутствует всегда (прозрачное) — иначе выбор дёргал бы раскладку.
+        -->
+        <Style x:Key="AccentSwatchStyle" TargetType="RadioButton">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Ring"
+                                Background="Transparent"
+                                BorderThickness="1"
+                                BorderBrush="Transparent"
+                                CornerRadius="{StaticResource Radius8}"
+                                Padding="2">
+                            <Border Width="28" Height="28"
+                                    CornerRadius="{StaticResource Radius6}"
+                                    Background="{TemplateBinding Background}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{StaticResource BrushFocusRing}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{StaticResource BrushTextPrimary}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SegmentStyle" TargetType="RadioButton" BasedOn="{StaticResource ChipToggleStyle}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <!-- Stretch + MaxWidth: карточки тянутся по ширине окна и центрируются. -->
+    <Grid MaxWidth="1320" Margin="32,24,32,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="20" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Шапка ============ -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Настройки" />
+                <TextBlock Style="{StaticResource PageSubtitleStyle}" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           Text="Приложение и служба" />
+            </StackPanel>
+
+            <Button x:Name="ResetButton" Grid.Column="1"
+                    Style="{StaticResource SecondaryButtonStyle}"
+                    Width="108" Height="32" Margin="16,0,0,0"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Content="Сбросить"
+                    ToolTip="Вернуть настройки приложения к значениям по умолчанию"
+                    Click="OnResetClick" />
+        </Grid>
+
+        <!-- ============ Группы ============ -->
+        <ScrollViewer Grid.Row="2"
+                      Style="{StaticResource ModernScrollViewerStyle}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly">
+            <StackPanel>
+
+                <!-- ─────────── Внешний вид ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ВНЕШНИЙ ВИД" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="0" Margin="0,6,0,0">
+                            <StackPanel x:Name="AccentPicker" DockPanel.Dock="Right"
+                                        Orientation="Horizontal" VerticalAlignment="Center">
+                                <RadioButton Style="{StaticResource AccentSwatchStyle}" GroupName="Accent"
+                                             Tag="Cyan" ToolTip="Циан" Margin="0"
+                                             Background="{StaticResource BrushAccentPresetCyan}"
+                                             Checked="OnAccentChecked" />
+                                <RadioButton Style="{StaticResource AccentSwatchStyle}" GroupName="Accent"
+                                             Tag="Violet" ToolTip="Фиолетовый"
+                                             Background="{StaticResource BrushAccentPresetViolet}"
+                                             Checked="OnAccentChecked" />
+                                <RadioButton Style="{StaticResource AccentSwatchStyle}" GroupName="Accent"
+                                             Tag="Emerald" ToolTip="Изумруд"
+                                             Background="{StaticResource BrushAccentPresetEmerald}"
+                                             Checked="OnAccentChecked" />
+                                <RadioButton Style="{StaticResource AccentSwatchStyle}" GroupName="Accent"
+                                             Tag="Rose" ToolTip="Роза"
+                                             Background="{StaticResource BrushAccentPresetRose}"
+                                             Checked="OnAccentChecked" />
+                                <RadioButton Style="{StaticResource AccentSwatchStyle}" GroupName="Accent"
+                                             Tag="Amber" ToolTip="Янтарь"
+                                             Background="{StaticResource BrushAccentPresetAmber}"
+                                             Checked="OnAccentChecked" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Акцент" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="1">
+                            <ToggleButton x:Name="ReducedMotionSwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnReducedMotionToggled" Unchecked="OnReducedMotionToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Уменьшить анимацию" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ─────────── Запуск ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ЗАПУСК" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="2" Margin="0,6,0,0">
+                            <ToggleButton x:Name="StartWithWindowsSwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnStartWithWindowsToggled" Unchecked="OnStartWithWindowsToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Запускать вместе с Windows" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="3">
+                            <ToggleButton x:Name="StartMinimizedSwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnStartMinimizedToggled" Unchecked="OnStartMinimizedToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Запускать свёрнутым в трей" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="4">
+                            <ToggleButton x:Name="AutoStartBypassSwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnAutoStartBypassToggled" Unchecked="OnAutoStartBypassToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Включать обход при старте" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ─────────── Окно ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ОКНО" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="5" Margin="0,6,0,0">
+                            <ToggleButton x:Name="MinimizeToTraySwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnMinimizeToTrayToggled" Unchecked="OnMinimizeToTrayToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Сворачивать в трей" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="6">
+                            <ToggleButton x:Name="CloseToTraySwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnCloseToTrayToggled" Unchecked="OnCloseToTrayToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Закрытие сворачивает в трей" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ─────────── Трафик ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ТРАФИК" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="7" Margin="0,6,0,0">
+                            <StackPanel x:Name="GameFilterSegments" DockPanel.Dock="Right"
+                                        Orientation="Horizontal" VerticalAlignment="Center">
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="GameFilter"
+                                             Tag="Disabled" Content="Выключен" Margin="0"
+                                             Checked="OnGameFilterChecked" />
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="GameFilter"
+                                             Tag="All" Content="TCP и UDP"
+                                             Checked="OnGameFilterChecked" />
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="GameFilter"
+                                             Tag="Tcp" Content="TCP"
+                                             Checked="OnGameFilterChecked" />
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="GameFilter"
+                                             Tag="Udp" Content="UDP"
+                                             Checked="OnGameFilterChecked" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Игровой фильтр" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="8">
+                            <StackPanel x:Name="IpsetSegments" DockPanel.Dock="Right"
+                                        Orientation="Horizontal" VerticalAlignment="Center">
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="Ipset"
+                                             Tag="Loaded" Content="Список" Margin="0"
+                                             Checked="OnIpsetChecked" />
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="Ipset"
+                                             Tag="None" Content="Выключен"
+                                             Checked="OnIpsetChecked" />
+                                <RadioButton Style="{StaticResource SegmentStyle}" GroupName="Ipset"
+                                             Tag="Any" Content="Любые адреса"
+                                             Checked="OnIpsetChecked" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Режим IPSet" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="9">
+                            <ToggleButton x:Name="AutoUpdateSwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnAutoUpdateToggled" Unchecked="OnAutoUpdateToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Проверять обновления" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="10">
+                            <ToggleButton x:Name="CheckUpdatesOnLaunchSwitch" DockPanel.Dock="Right"
+                                          Style="{StaticResource ToggleSwitchStyle}"
+                                          Checked="OnCheckUpdatesOnLaunchToggled" Unchecked="OnCheckUpdatesOnLaunchToggled" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Проверять обновления при запуске" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ─────────── Активные фейки ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="АКТИВНЫЕ ФЕЙКИ" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="11" Margin="0,6,0,0">
+                            <ComboBox x:Name="DiscordFakeCombo" DockPanel.Dock="Right"
+                                      Style="{StaticResource ModernComboBoxStyle}"
+                                      Width="260" Height="32"
+                                      SelectionChanged="OnDiscordFakeChanged" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Discord UDP" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="12">
+                            <ComboBox x:Name="GameFakeCombo" DockPanel.Dock="Right"
+                                      Style="{StaticResource ModernComboBoxStyle}"
+                                      Width="260" Height="32"
+                                      SelectionChanged="OnGameFakeChanged" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Игровой UDP" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <TextBlock Style="{StaticResource CaptionTextStyle}"
+                                   Foreground="{StaticResource BrushTextTertiary}"
+                                   Margin="0,12,0,0" TextWrapping="Wrap"
+                                   Text="Подменяет ACTIVE_DISCORD_UDP.bin и ACTIVE_GAME_UDP.bin в папке bin. Новый фейк подхватывается только при следующем запуске обхода." />
+                    </StackPanel>
+                </Border>
+
+                <!-- ─────────── Служба ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="СЛУЖБА" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="13" Margin="0,6,0,0">
+                            <TextBlock DockPanel.Dock="Right"
+                                       Style="{StaticResource RowValueStyle}"
+                                       Text="{Binding ServiceStateText}" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Состояние" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="14">
+                            <TextBlock DockPanel.Dock="Right"
+                                       Style="{StaticResource RowValueStyle}"
+                                       Text="{Binding InstalledServiceStrategy, TargetNullValue='—'}" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Стратегия службы" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource ActionRowStyle}" fx:Fx.RevealIndex="15">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Style="{StaticResource PrimaryButtonStyle}"
+                                        Width="160" Height="36"
+                                        Content="Установить службу"
+                                        Command="{Binding InstallServiceCommand}" />
+                                <Button Style="{StaticResource DangerOutlineButtonStyle}"
+                                        Width="148" Height="36" Margin="12,0,0,0"
+                                        Content="Удалить службу"
+                                        Command="{Binding RemoveServiceCommand}" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource RowValueStyle}" Margin="0"
+                                       TextWrapping="Wrap"
+                                       Text="Служба поднимает обход до входа в систему" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ─────────── О программе ─────────── -->
+                <Border Style="{StaticResource GroupCardStyle}" Margin="0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource MicroLabelStyle}" Text="О ПРОГРАММЕ" />
+
+                        <TextBlock Style="{StaticResource CardTitleStyle}" Margin="0,12,0,0"
+                                   Text="{Binding LocalVersion, StringFormat='Zapret Control Center · ядро {0}'}" />
+
+                        <TextBlock Style="{StaticResource CaptionTextStyle}" Margin="0,6,0,0"
+                                   TextWrapping="Wrap"
+                                   Text="Это только графическая оболочка. Обход DPI выполняют winws.exe и драйвер WinDivert из проекта zapret — приложение лишь собирает командную строку выбранной стратегии и следит за процессом." />
+
+                        <Border Style="{StaticResource SeparatorStyle}" Margin="0,14,0,0" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="16">
+                            <Button DockPanel.Dock="Right"
+                                    Style="{StaticResource LinkButtonStyle}"
+                                    Content="Открыть на GitHub"
+                                    Tag="https://github.com/Flowseal/zapret-discord-youtube"
+                                    Click="OnLinkClick" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Исходный проект" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource RowStyle}" fx:Fx.RevealIndex="17">
+                            <Button x:Name="ReleasesLink" DockPanel.Dock="Right"
+                                    Style="{StaticResource LinkButtonStyle}"
+                                    Content="Страница релизов"
+                                    Click="OnLinkClick" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Загрузка обновлений" />
+                        </DockPanel>
+
+                        <Border Style="{StaticResource SeparatorStyle}" />
+
+                        <DockPanel Style="{StaticResource ActionRowStyle}" fx:Fx.RevealIndex="18">
+                            <Button DockPanel.Dock="Right"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Width="148" Height="32"
+                                    VerticalAlignment="Center"
+                                    Content="Открыть папку"
+                                    Command="{Binding OpenFolderCommand}" />
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource RowLabelStyle}" Text="Папка zapret" />
+                                <TextBlock x:Name="RootPathText" Margin="0,2,0,0"
+                                           Style="{StaticResource InlineNumericStyle}"
+                                           Foreground="{StaticResource BrushTextTertiary}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

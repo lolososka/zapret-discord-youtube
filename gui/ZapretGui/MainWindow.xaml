@@ -1,0 +1,471 @@
+<!--
+    Оболочка окна (§5 целиком).
+
+    Слои внутри корневого Border, снизу вверх: заливка BrushBgBase → AmbientBackground
+    (слои 2 и 3 из §5) → сетка «титул 44 / тело» → ToastHost поверх всего.
+    Индикатор навигации здесь ровно один: пять экземпляров с триггерами дали бы
+    пять перекрашиваний вместо одного TranslateTransform (§5, §7 NavIndicatorSlide).
+-->
+<Window x:Class="ZapretGui.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:ctl="clr-namespace:ZapretGui.Controls"
+        xmlns:core="clr-namespace:ZapretGui.Core"
+        Title="Zapret Control Center"
+        Icon="pack://application:,,,/Assets/app.ico"
+        Width="1180" Height="760"
+        MinWidth="1024" MinHeight="680"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        ResizeMode="CanResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BrushBgBase}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="44"
+                            ResizeBorderThickness="6"
+                            GlassFrameThickness="1"
+                            CornerRadius="0"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+
+        <!-- Глифы кнопок хрома «развернуть» / «восстановить»: в Icons.xaml их нет. -->
+        <Geometry x:Key="GlyphMaximize">M0.5,0.5 H9.5 V9.5 H0.5 Z</Geometry>
+        <Geometry x:Key="GlyphRestore">M2.5,2.5 V0.5 H9.5 V7.5 H7.5 M0.5,2.5 H7.5 V9.5 H0.5 Z</Geometry>
+
+        <Style x:Key="ChromeGlyphStyle" TargetType="Path">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="Fill" Value="{x:Null}" />
+            <Setter Property="StrokeThickness" Value="1" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Stroke"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+        </Style>
+
+        <!-- Точка состояния: единственный цветной элемент титульной строки вместе с маркой. -->
+        <Style x:Key="StatusDotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="Fill" Value="{StaticResource BrushStateStopped}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding BypassState}" Value="Starting">
+                    <Setter Property="Fill" Value="{StaticResource BrushStateArming}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding BypassState}" Value="Stopping">
+                    <Setter Property="Fill" Value="{StaticResource BrushStateArming}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding BypassState}" Value="Running">
+                    <Setter Property="Fill" Value="{DynamicResource BrushStateRunning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding BypassState}" Value="Failed">
+                    <Setter Property="Fill" Value="{StaticResource BrushDanger}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 11px SemiBold ЗАГЛАВНЫМИ; цвет наследуется от контейнера. -->
+        <Style x:Key="ChromeCapsStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource FontUI}" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeMicro}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LineHeight" Value="14" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        </Style>
+
+    </Window.Resources>
+
+    <Border x:Name="RootBorder"
+            Background="{StaticResource BrushBgBase}"
+            BorderBrush="{StaticResource BrushHairlineStrong}"
+            BorderThickness="1"
+            RenderTransformOrigin="0.5,0.5"
+            TextElement.FontFamily="{StaticResource FontUI}"
+            TextElement.FontSize="{StaticResource FontSizeBody}"
+            TextElement.Foreground="{StaticResource BrushTextSecondary}">
+
+        <Border.RenderTransform>
+            <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
+        </Border.RenderTransform>
+
+        <Grid>
+
+            <!-- Слои 2–3 §5: кэшированная подсветка и дизер-плитка. -->
+            <ctl:AmbientBackground x:Name="AmbientLayer" IsActive="{Binding IsRunning}" />
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="44" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- ================= Титульная строка ================= -->
+                <Grid Grid.Row="0" Background="{StaticResource BrushBgVoid}">
+                    <Border VerticalAlignment="Bottom" Height="1"
+                            Background="{StaticResource BrushHairlineWeak}" />
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Margin="16,0,0,0">
+
+                        <Path x:Name="TitleMark"
+                              Data="{StaticResource IconShieldStroke}"
+                              Width="16" Height="16"
+                              Stretch="Uniform"
+                              Fill="{x:Null}"
+                              StrokeThickness="1.5"
+                              StrokeLineJoin="Round"
+                              VerticalAlignment="Center">
+                            <Path.Style>
+                                <Style TargetType="Path">
+                                    <Setter Property="Stroke" Value="{StaticResource BrushTextTertiary}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                            <Setter Property="Stroke" Value="{DynamicResource BrushStateRunning}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+
+                        <TextBlock x:Name="TitleWordmark"
+                                   Text="ZAPRET"
+                                   Margin="12,0,0,0"
+                                   FontFamily="{StaticResource FontUI}"
+                                   FontSize="{StaticResource FontSizeMicro}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource BrushTextTertiary}"
+                                   VerticalAlignment="Center"
+                                   TextOptions.TextFormattingMode="Display"
+                                   ctl:Fx.Tracking="160" />
+
+                        <TextBlock Text="{x:Static core:UpdateService.LocalVersion}"
+                                   Margin="8,0,0,0"
+                                   FontFamily="{StaticResource FontMono}"
+                                   FontSize="{StaticResource FontSizeMicro}"
+                                   Foreground="{StaticResource BrushTextDisabled}"
+                                   VerticalAlignment="Center"
+                                   TextOptions.TextFormattingMode="Display" />
+
+                        <!--
+                            Метка состояния: не «пилюля», а прямоугольный тег с индикаторной
+                            планкой слева и заливкой по состоянию — так он читается как показание
+                            прибора, а не как всплывающий бейдж.
+                        -->
+                        <Border Margin="14,0,0,0" Height="24"
+                                CornerRadius="{StaticResource Radius4}"
+                                BorderThickness="1"
+                                Padding="0,0,10,0"
+                                VerticalAlignment="Center">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{StaticResource BrushSurfaceRaised}" />
+                                    <Setter Property="BorderBrush" Value="{StaticResource BrushHairlineWeak}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding BypassState}" Value="Running">
+                                            <Setter Property="Background" Value="{DynamicResource BrushAccentWash}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentDim}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding BypassState}" Value="Starting">
+                                            <Setter Property="Background" Value="#1AF0B441" />
+                                            <Setter Property="BorderBrush" Value="#55F0B441" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding BypassState}" Value="Stopping">
+                                            <Setter Property="Background" Value="#1AF0B441" />
+                                            <Setter Property="BorderBrush" Value="#55F0B441" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding BypassState}" Value="Failed">
+                                            <Setter Property="Background" Value="#1AFF5F6D" />
+                                            <Setter Property="BorderBrush" Value="#55FF5F6D" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+
+                                <Grid Width="8" Height="8" Margin="9,0,0,0" VerticalAlignment="Center">
+                                    <Ellipse x:Name="StatusHalo"
+                                             Width="8" Height="8"
+                                             Fill="{x:Null}"
+                                             Stroke="{DynamicResource BrushAccentMid}"
+                                             StrokeThickness="1"
+                                             Opacity="0"
+                                             IsHitTestVisible="False"
+                                             RenderTransformOrigin="0.5,0.5">
+                                        <Ellipse.RenderTransform>
+                                            <ScaleTransform x:Name="StatusHaloScale" ScaleX="1" ScaleY="1" />
+                                        </Ellipse.RenderTransform>
+                                    </Ellipse>
+                                    <Ellipse x:Name="StatusDot" Style="{StaticResource StatusDotStyle}" />
+                                </Grid>
+
+                                <Grid Margin="6,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="ОСТАНОВЛЕН">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource ChromeCapsStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding BypassState}" Value="Stopped">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <TextBlock Text="ЗАПУСК" Foreground="{StaticResource BrushStateArming}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource ChromeCapsStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding BypassState}" Value="Starting">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding BypassState}" Value="Stopping">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <TextBlock Text="АКТИВЕН" Foreground="{DynamicResource BrushAccentMid}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource ChromeCapsStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding BypassState}" Value="Running">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <TextBlock Text="ОШИБКА" Foreground="{StaticResource BrushDanger}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource ChromeCapsStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding BypassState}" Value="Failed">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Margin="0,0,6,0">
+
+                        <Button x:Name="MinimizeButton"
+                                Style="{StaticResource ChromeButtonStyle}"
+                                Click="OnMinimizeClick"
+                                AutomationProperties.Name="Свернуть">
+                            <Path Style="{StaticResource ChromeGlyphStyle}"
+                                  Data="{StaticResource IconMinimizeStroke}" />
+                        </Button>
+
+                        <Button x:Name="MaximizeButton"
+                                Style="{StaticResource ChromeButtonStyle}"
+                                Click="OnMaximizeClick"
+                                AutomationProperties.Name="Развернуть">
+                            <Grid>
+                                <Path x:Name="GlyphMax"
+                                      Style="{StaticResource ChromeGlyphStyle}"
+                                      Stretch="None"
+                                      Data="{StaticResource GlyphMaximize}" />
+                                <Path x:Name="GlyphRestore"
+                                      Style="{StaticResource ChromeGlyphStyle}"
+                                      Stretch="None"
+                                      Visibility="Collapsed"
+                                      Data="{StaticResource GlyphRestore}" />
+                            </Grid>
+                        </Button>
+
+                        <Button x:Name="CloseButton"
+                                Style="{StaticResource ChromeCloseButtonStyle}"
+                                Click="OnCloseClick"
+                                AutomationProperties.Name="Закрыть">
+                            <Path Style="{StaticResource ChromeGlyphStyle}"
+                                  Data="{StaticResource IconCloseStroke}" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ================= Тело: рейл 208 + контент ================= -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="208" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border x:Name="NavRail"
+                            Grid.Column="0"
+                            Background="{StaticResource BrushBgVoid}"
+                            BorderBrush="{StaticResource BrushHairlineWeak}"
+                            BorderThickness="0,0,1,0">
+                        <Border.RenderTransform>
+                            <TranslateTransform x:Name="NavRailMove" X="0" Y="0" />
+                        </Border.RenderTransform>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="56" />
+                                <RowDefinition Height="1" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="1" />
+                                <RowDefinition Height="55" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal"
+                                        Margin="20,0,0,0" VerticalAlignment="Center">
+                                <Path Data="{StaticResource IconShieldFill}"
+                                      Width="24" Height="24"
+                                      Stretch="Uniform"
+                                      Stroke="{x:Null}"
+                                      Fill="{DynamicResource BrushAccentGradient}"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Text="ZAPRET"
+                                           Margin="12,0,0,0"
+                                           FontFamily="{StaticResource FontDisplay}"
+                                           FontSize="{StaticResource FontSizeSectionTitle}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource BrushTextPrimary}"
+                                           VerticalAlignment="Center"
+                                           TextOptions.TextFormattingMode="Display"
+                                           ctl:Fx.Tracking="180" />
+                            </StackPanel>
+
+                            <Border Grid.Row="1" Margin="16,0"
+                                    Background="{StaticResource BrushHairlineWeak}" />
+
+                            <!-- Первый пункт начинается на y=64: 56 + 1 (линия) + 7. -->
+                            <Grid Grid.Row="2" Margin="0,7,0,0">
+                                <StackPanel x:Name="NavItems">
+                                    <RadioButton x:Name="NavDashboard"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Панель"
+                                                 Tag="{StaticResource IconDashboardStroke}" />
+                                    <RadioButton x:Name="NavStrategies"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Стратегии"
+                                                 Tag="{StaticResource IconLayersStroke}" />
+                                    <RadioButton x:Name="NavDiagnostics"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Диагностика"
+                                                 Tag="{StaticResource IconPulseStroke}" />
+                                    <RadioButton x:Name="NavTelegram"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Телеграм"
+                                                 Tag="{StaticResource IconPlugStroke}" />
+                                    <RadioButton x:Name="NavLogs"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Журнал"
+                                                 Tag="{StaticResource IconJournalStroke}" />
+                                    <RadioButton x:Name="NavSettings"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Настройки"
+                                                 Tag="{StaticResource IconSlidersStroke}" />
+                                </StackPanel>
+
+                                <!-- Один индикатор на весь рейл (§5): 2×20, ездит по Y. -->
+                                <Rectangle x:Name="NavIndicator"
+                                           Width="2" Height="20"
+                                           RadiusX="1" RadiusY="1"
+                                           Fill="{DynamicResource BrushNavIndicator}"
+                                           HorizontalAlignment="Left" VerticalAlignment="Top"
+                                           Margin="0,10,0,0"
+                                           Opacity="0"
+                                           IsHitTestVisible="False"
+                                           RenderTransformOrigin="0.5,0.5">
+                                    <Rectangle.RenderTransform>
+                                        <TransformGroup>
+                                            <ScaleTransform x:Name="NavIndicatorScale" ScaleX="1" ScaleY="1" />
+                                            <TranslateTransform x:Name="NavIndicatorMove" X="0" Y="0" />
+                                        </TransformGroup>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                            </Grid>
+
+                            <Border Grid.Row="3" Margin="16,0"
+                                    Background="{StaticResource BrushHairlineWeak}" />
+
+                            <StackPanel Grid.Row="4" Orientation="Horizontal"
+                                        Margin="20,0,0,0" VerticalAlignment="Center">
+                                <Ellipse Style="{StaticResource StatusDotStyle}" VerticalAlignment="Center" />
+                                <Grid Margin="10,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="ОСТАНОВЛЕНО"
+                                               Foreground="{StaticResource BrushTextTertiary}"
+                                               ctl:Fx.Tracking="110">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource ChromeCapsStyle}">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="ОБХОД АКТИВЕН"
+                                               Foreground="{StaticResource BrushTextTertiary}"
+                                               ctl:Fx.Tracking="110">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource ChromeCapsStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Grid>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Column="1" Background="{StaticResource BrushBgSunken}">
+                        <ContentControl x:Name="PageHost"
+                                        Focusable="False"
+                                        HorizontalContentAlignment="Stretch"
+                                        VerticalContentAlignment="Stretch">
+                            <ContentControl.RenderTransform>
+                                <TranslateTransform x:Name="PageMove" X="0" Y="0" />
+                            </ContentControl.RenderTransform>
+                        </ContentControl>
+                    </Grid>
+                </Grid>
+            </Grid>
+
+            <!-- Тосты живут над контент-хостом, поверх страниц (§9). -->
+            <ctl:ToastHost x:Name="ToastLayer" Margin="209,44,0,0" />
+        </Grid>
+    </Border>
+</Window>

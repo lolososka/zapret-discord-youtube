@@ -1,0 +1,48 @@
+<!--
+    Система движения и геометрия (§4, §7 спецификации).
+    Здесь только «словарь» — сами раскадровки живут в шаблонах контролов и на страницах,
+    потому что анимируемые кисти и трансформы обязаны быть локальными экземплярами.
+    Функции сглаживания и Duration неизменяемы, их можно спокойно шарить.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ==================== Сглаживание ==================== -->
+
+    <CubicEase x:Key="EaseOutCubic" EasingMode="EaseOut" />
+    <CubicEase x:Key="EaseInOutCubic" EasingMode="EaseInOut" />
+    <QuadraticEase x:Key="EaseOutQuad" EasingMode="EaseOut" />
+    <QuadraticEase x:Key="EaseInQuad" EasingMode="EaseIn" />
+    <QuarticEase x:Key="EaseOutQuart" EasingMode="EaseOut" />
+    <QuinticEase x:Key="EaseOutQuint" EasingMode="EaseOut" />
+    <QuinticEase x:Key="EaseInQuint" EasingMode="EaseIn" />
+    <CircleEase x:Key="EaseOutCircle" EasingMode="EaseOut" />
+    <SineEase x:Key="EaseInOutSine" EasingMode="EaseInOut" />
+    <BackEase x:Key="EaseOutBack" EasingMode="EaseOut" Amplitude="0.35" />
+    <PowerEase x:Key="EaseOutPower3" EasingMode="EaseOut" Power="3" />
+
+    <!-- ==================== Длительности ==================== -->
+
+    <Duration x:Key="DurPress">0:0:0.07</Duration>
+    <Duration x:Key="DurFast">0:0:0.12</Duration>
+    <Duration x:Key="DurBase">0:0:0.18</Duration>
+    <Duration x:Key="DurNav">0:0:0.22</Duration>
+    <Duration x:Key="DurSlow">0:0:0.26</Duration>
+    <Duration x:Key="DurArm">0:0:0.78</Duration>
+
+    <!-- ==================== Скругления ==================== -->
+
+    <CornerRadius x:Key="Radius0">0</CornerRadius>
+    <CornerRadius x:Key="Radius4">4</CornerRadius>
+    <CornerRadius x:Key="Radius6">6</CornerRadius>
+    <CornerRadius x:Key="Radius8">8</CornerRadius>
+    <CornerRadius x:Key="Radius12">12</CornerRadius>
+    <CornerRadius x:Key="RadiusPill">999</CornerRadius>
+
+    <!-- ==================== Отступы ==================== -->
+
+    <Thickness x:Key="PagePadding">32,24,32,24</Thickness>
+    <Thickness x:Key="CardPadding">16</Thickness>
+    <Thickness x:Key="PanelPadding">20</Thickness>
+
+</ResourceDictionary>

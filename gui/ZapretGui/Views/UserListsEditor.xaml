@@ -1,0 +1,247 @@
+<UserControl x:Class="ZapretGui.Views.UserListsEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Visibility="Collapsed"
+             Focusable="False"
+             SnapsToDevicePixels="True"
+             UseLayoutRounding="True">
+
+    <Grid x:Name="ModalRoot">
+        <Rectangle Fill="{StaticResource BrushScrim}"
+                   Opacity="0.88"
+                   MouseLeftButtonDown="OnScrimClick" />
+
+        <Border x:Name="ModalCard"
+                Width="680" Height="560"
+                Margin="24"
+                Padding="24"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="{StaticResource BrushSurfaceRaised}"
+                BorderBrush="{StaticResource BrushHairlineStrong}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource Radius8}"
+                Focusable="True"
+                KeyDown="OnModalKeyDown">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Заголовок -->
+                <Grid Grid.Row="0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitleStyle}"
+                                   Text="Свои сайты и исключения" />
+                        <TextBlock Style="{StaticResource PageSubtitleStyle}"
+                                   Margin="0,5,48,0"
+                                   TextWrapping="Wrap"
+                                   Text="Эти списки дополняют все стратегии. Служебные файлы и базы обновлений останутся нетронутыми." />
+                    </StackPanel>
+
+                    <Button HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Style="{StaticResource IconButtonStyle}"
+                            Click="OnCloseClick"
+                            ToolTip="Закрыть"
+                            AutomationProperties.Name="Закрыть">
+                        <Path Style="{StaticResource IconSmallStyle}"
+                              Data="{StaticResource IconCloseStroke}"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
+                </Grid>
+
+                <!-- Понятные режимы вместо имён txt-файлов -->
+                <StackPanel Grid.Row="1"
+                            Orientation="Horizontal"
+                            Margin="0,18,0,0">
+                    <RadioButton x:Name="BypassTab"
+                                 Style="{StaticResource ChipToggleStyle}"
+                                 GroupName="UserListKind"
+                                 Tag="BypassDomains"
+                                 Content="Обходить"
+                                 IsChecked="True"
+                                 Checked="OnKindChecked"
+                                 ToolTip="Домены, для которых нужно включить обход" />
+                    <RadioButton Style="{StaticResource ChipToggleStyle}"
+                                 GroupName="UserListKind"
+                                 Tag="ExcludedDomains"
+                                 Content="Не обходить"
+                                 Checked="OnKindChecked"
+                                 ToolTip="Домены, которые winws не должен трогать" />
+                    <RadioButton Style="{StaticResource ChipToggleStyle}"
+                                 GroupName="UserListKind"
+                                 Tag="ExcludedIps"
+                                 Content="Исключить IP"
+                                 Checked="OnKindChecked"
+                                 ToolTip="IP-адреса и подсети, которые winws не должен трогать" />
+                </StackPanel>
+
+                <TextBlock x:Name="KindDescription"
+                           Grid.Row="2"
+                           Style="{StaticResource BodyTextStyle}"
+                           Margin="0,12,0,0"
+                           Foreground="{StaticResource BrushTextSecondary}"
+                           TextWrapping="Wrap" />
+
+                <!-- Добавление одного значения или пачки строк -->
+                <Grid Grid.Row="3" Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox x:Name="NewEntries"
+                             Grid.Column="0"
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             Height="58"
+                             Padding="10,8"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             VerticalContentAlignment="Top"
+                             VerticalScrollBarVisibility="Auto"
+                             KeyDown="OnNewEntriesKeyDown"
+                             AutomationProperties.Name="Новые значения" />
+
+                    <Button Grid.Column="1"
+                            Width="108" Height="36"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Top"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Content="Добавить"
+                            Click="OnAddClick"
+                            ToolTip="Можно вставить сразу несколько строк; Ctrl+Enter тоже добавляет" />
+                </Grid>
+
+                <!-- Список: каждую строку можно исправить прямо на месте или удалить -->
+                <Border Grid.Row="4"
+                        Margin="0,14,0,0"
+                        Background="{StaticResource BrushBgSunken}"
+                        BorderBrush="{StaticResource BrushHairlineWeak}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius6}">
+                    <Grid>
+                        <ScrollViewer Style="{StaticResource ModernScrollViewerStyle}"
+                                      Padding="10"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="EntriesList"
+                                          Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,6"
+                                                Padding="8,6"
+                                                Background="{StaticResource BrushSurfaceRaised}"
+                                                BorderBrush="{StaticResource BrushHairlineWeak}"
+                                                BorderThickness="1"
+                                                CornerRadius="{StaticResource Radius4}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBox Grid.Column="0"
+                                                         Height="32"
+                                                         Style="{StaticResource ModernTextBoxStyle}"
+                                                         Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         AutomationProperties.Name="Значение списка" />
+
+                                                <Button Grid.Column="1"
+                                                        Margin="8,0,0,0"
+                                                        Style="{StaticResource IconButtonStyle}"
+                                                        Tag="{Binding}"
+                                                        Click="OnRemoveClick"
+                                                        ToolTip="Удалить"
+                                                        AutomationProperties.Name="Удалить">
+                                                    <Path Style="{StaticResource IconSmallStyle}"
+                                                          Data="{StaticResource IconTrashStroke}"
+                                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <StackPanel x:Name="EmptyState"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    IsHitTestVisible="False">
+                            <TextBlock Style="{StaticResource CardTitleStyle}"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       Text="Пока ничего не добавлено" />
+                            <TextBlock Style="{StaticResource CaptionTextStyle}"
+                                       Margin="0,5,0,0"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource BrushTextTertiary}"
+                                       Text="Техническую заглушку программа сохранит сама" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Ошибка проверки или предложение применить сохранённое -->
+                <Border x:Name="Notice"
+                        Grid.Row="5"
+                        Margin="0,12,0,0"
+                        Padding="12,9"
+                        Background="#141A222C"
+                        BorderBrush="{StaticResource BrushHairlineStrong}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius6}"
+                        Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="NoticeText"
+                                   VerticalAlignment="Center"
+                                   Style="{StaticResource CaptionTextStyle}"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   TextWrapping="Wrap" />
+
+                        <Button x:Name="RestartButton"
+                                Grid.Column="1"
+                                Height="30"
+                                Margin="12,0,0,0"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Content="Перезапустить сейчас"
+                                Click="OnRestartClick"
+                                Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+                <!-- Действия -->
+                <Grid Grid.Row="6" Margin="0,16,0,0">
+                    <Button HorizontalAlignment="Left"
+                            Height="34"
+                            Style="{StaticResource GhostButtonStyle}"
+                            Content="Открыть папку списков"
+                            Click="OnOpenFolderClick" />
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <Button Height="34"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Content="Отмена"
+                                Click="OnCloseClick" />
+                        <Button Width="112" Height="34"
+                                Margin="10,0,0,0"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Content="Сохранить"
+                                Click="OnSaveClick" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,161 @@
+<!--
+    Палитра (§2 спецификации).
+    Порядок важен: Color-ресурсы объявлены первыми — кисти ссылаются на них через StaticResource,
+    а StaticResource не умеет смотреть вперёд.
+
+    Блок «Акцент» (BrushAccentStart/Mid/End/Glow/Wash/Dim/Gradient, BrushNavIndicator,
+    BrushStateRunning, ColorAccent*) подменяется переключателем акцента в Настройках,
+    поэтому потребители обязаны брать его через DynamicResource.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ==================== Color-ресурсы (для ColorAnimation) ==================== -->
+
+    <Color x:Key="ColorAccentStart">#FF26E0F2</Color>
+    <Color x:Key="ColorAccentMid">#FF29C4FA</Color>
+    <Color x:Key="ColorAccentEnd">#FF2FA8FF</Color>
+
+    <Color x:Key="ColorBgVoid">#FF05070A</Color>
+    <Color x:Key="ColorBgSunken">#FF06080C</Color>
+    <Color x:Key="ColorSurfaceRaised">#FF10141B</Color>
+    <Color x:Key="ColorSurfaceOverlay">#FF171C25</Color>
+    <Color x:Key="ColorSurfaceHover">#FF161B23</Color>
+    <Color x:Key="ColorSurfacePressed">#FF0C1017</Color>
+    <Color x:Key="ColorInputBackground">#FF0A0E14</Color>
+
+    <Color x:Key="ColorHairlineWeak">#FF151A21</Color>
+    <Color x:Key="ColorHairlineStrong">#FF262D37</Color>
+
+    <Color x:Key="ColorTextPrimary">#FFEAEFF6</Color>
+    <Color x:Key="ColorTextSecondary">#FF94A1B2</Color>
+    <Color x:Key="ColorTextTertiary">#FF5E6B7C</Color>
+    <Color x:Key="ColorTextDisabled">#FF3E4753</Color>
+
+    <Color x:Key="ColorStateStopped">#FF6E7A85</Color>
+    <Color x:Key="ColorStateRunning">#FF29C4FA</Color>
+    <Color x:Key="ColorStateArming">#FFF0B441</Color>
+
+    <Color x:Key="ColorSuccess">#FF35E0A1</Color>
+    <Color x:Key="ColorWarning">#FFF0B441</Color>
+    <Color x:Key="ColorDanger">#FFFF5F6D</Color>
+    <Color x:Key="ColorInfo">#FF4FA8FF</Color>
+
+    <Color x:Key="ColorScrollThumb">#FF2A313B</Color>
+    <Color x:Key="ColorScrollThumbHover">#FF3B4450</Color>
+
+    <Color x:Key="ColorShadow">#CC000000</Color>
+
+    <!-- ==================== Плоскости и поверхности ==================== -->
+
+    <SolidColorBrush x:Key="BrushBgVoid" Color="#FF05070A" />
+    <SolidColorBrush x:Key="BrushBgBase" Color="#FF090C11" />
+    <SolidColorBrush x:Key="BrushBgSunken" Color="#FF06080C" />
+    <SolidColorBrush x:Key="BrushSurfaceRaised" Color="#FF10141B" />
+    <SolidColorBrush x:Key="BrushSurfaceOverlay" Color="#FF171C25" />
+    <SolidColorBrush x:Key="BrushSurfaceHover" Color="#FF161B23" />
+    <SolidColorBrush x:Key="BrushSurfacePressed" Color="#FF0C1017" />
+    <SolidColorBrush x:Key="BrushCardHoverOverlay" Color="#0DFFFFFF" />
+    <SolidColorBrush x:Key="BrushInputBackground" Color="#FF0A0E14" />
+    <SolidColorBrush x:Key="BrushDisabledSurface" Color="#FF0D1116" />
+
+    <!-- ==================== Волосяные линии ==================== -->
+
+    <SolidColorBrush x:Key="BrushHairlineWeak" Color="#FF151A21" />
+    <SolidColorBrush x:Key="BrushHairlineStrong" Color="#FF262D37" />
+
+    <!-- ==================== Текст ==================== -->
+
+    <SolidColorBrush x:Key="BrushTextPrimary" Color="#FFEAEFF6" />
+    <SolidColorBrush x:Key="BrushTextSecondary" Color="#FF94A1B2" />
+    <SolidColorBrush x:Key="BrushTextTertiary" Color="#FF5E6B7C" />
+    <SolidColorBrush x:Key="BrushTextDisabled" Color="#FF3E4753" />
+
+    <!-- ==================== Акцент (DynamicResource у потребителей) ==================== -->
+
+    <SolidColorBrush x:Key="BrushAccentStart" Color="#FF26E0F2" />
+    <SolidColorBrush x:Key="BrushAccentMid" Color="#FF29C4FA" />
+    <SolidColorBrush x:Key="BrushAccentEnd" Color="#FF2FA8FF" />
+    <SolidColorBrush x:Key="BrushAccentGlow" Color="#8C29C4FA" />
+    <SolidColorBrush x:Key="BrushAccentWash" Color="#1A29C4FA" />
+    <SolidColorBrush x:Key="BrushAccentDim" Color="#5229C4FA" />
+
+    <LinearGradientBrush x:Key="BrushAccentGradient" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0.0" Color="#FF26E0F2" />
+        <GradientStop Offset="0.5" Color="#FF29C4FA" />
+        <GradientStop Offset="1.0" Color="#FF2FA8FF" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="BrushNavIndicator" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Offset="0.0" Color="#FF26E0F2" />
+        <GradientStop Offset="1.0" Color="#FF2FA8FF" />
+    </LinearGradientBrush>
+
+    <!-- ==================== Сигнальные цвета ==================== -->
+
+    <SolidColorBrush x:Key="BrushStateRunning" Color="#FF29C4FA" />
+    <SolidColorBrush x:Key="BrushStateStopped" Color="#FF6E7A85" />
+    <SolidColorBrush x:Key="BrushStateArming" Color="#FFF0B441" />
+    <SolidColorBrush x:Key="BrushSuccess" Color="#FF35E0A1" />
+    <SolidColorBrush x:Key="BrushWarning" Color="#FFF0B441" />
+    <SolidColorBrush x:Key="BrushDanger" Color="#FFFF5F6D" />
+    <SolidColorBrush x:Key="BrushInfo" Color="#FF4FA8FF" />
+
+    <!-- ==================== Служебное ==================== -->
+
+    <SolidColorBrush x:Key="BrushScrollThumb" Color="#FF2A313B" />
+    <SolidColorBrush x:Key="BrushScrollThumbHover" Color="#FF3B4450" />
+    <SolidColorBrush x:Key="BrushScrollTrack" Color="#00000000" />
+    <SolidColorBrush x:Key="BrushFocusRing" Color="#66FFFFFF" />
+    <SolidColorBrush x:Key="BrushScrim" Color="#C4050709" />
+    <SolidColorBrush x:Key="BrushShadow" Color="#CC000000" />
+    <SolidColorBrush x:Key="BrushScopeGrid" Color="#FF12161C" />
+
+    <!-- Дизеринг поверх амбиентной подсветки: два пикселя на плитку 3×3 — убивает бандинг. -->
+    <DrawingBrush x:Key="BrushDitherDot"
+                  TileMode="Tile"
+                  Viewbox="0,0,3,3" ViewboxUnits="Absolute"
+                  Viewport="0,0,3,3" ViewportUnits="Absolute"
+                  Stretch="Fill">
+        <DrawingBrush.Drawing>
+            <GeometryDrawing Brush="#0AFFFFFF">
+                <GeometryDrawing.Geometry>
+                    <GeometryGroup>
+                        <RectangleGeometry Rect="0,0,1,1" />
+                        <RectangleGeometry Rect="1.5,1.5,1,1" />
+                    </GeometryGroup>
+                </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+
+    <!-- ==================== Пресеты акцента для пикера в Настройках ==================== -->
+    <!-- Готовые градиенты 28×28-квадратов; сами ключи акцента подменяются кодом пикера. -->
+
+    <LinearGradientBrush x:Key="BrushAccentPresetCyan" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0.0" Color="#FF26E0F2" />
+        <GradientStop Offset="0.5" Color="#FF29C4FA" />
+        <GradientStop Offset="1.0" Color="#FF2FA8FF" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="BrushAccentPresetViolet" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0.0" Color="#FF6E5CFF" />
+        <GradientStop Offset="0.5" Color="#FF8B57FF" />
+        <GradientStop Offset="1.0" Color="#FFA855F7" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="BrushAccentPresetEmerald" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0.0" Color="#FF35E8A6" />
+        <GradientStop Offset="0.5" Color="#FF23D3A2" />
+        <GradientStop Offset="1.0" Color="#FF14B8A6" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="BrushAccentPresetRose" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0.0" Color="#FFFF7A9C" />
+        <GradientStop Offset="0.5" Color="#FFFF5479" />
+        <GradientStop Offset="1.0" Color="#FFF0356A" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="BrushAccentPresetAmber" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Offset="0.0" Color="#FFFFC94B" />
+        <GradientStop Offset="0.5" Color="#FFFFA644" />
+        <GradientStop Offset="1.0" Color="#FFFF853D" />
+    </LinearGradientBrush>
+
+</ResourceDictionary>

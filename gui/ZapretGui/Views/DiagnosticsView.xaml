@@ -1,0 +1,222 @@
+﻿<UserControl x:Class="ZapretGui.Views.DiagnosticsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:ZapretGui.Controls"
+             Background="{StaticResource BrushBgSunken}"
+             FontFamily="{StaticResource FontUI}"
+             FontSize="{StaticResource FontSizeBody}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+
+    <!-- Stretch + MaxWidth: содержимое центрируется, но забирает всю доступную ширину. -->
+    <Grid MaxWidth="1320" Margin="32,24,32,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="20" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Шапка ============ -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Диагностика" />
+                <TextBlock Style="{StaticResource PageSubtitleStyle}" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           Text="Проверка окружения" />
+            </StackPanel>
+
+            <Button x:Name="RunAllButton" Grid.Column="1"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    Width="132" Height="32" Margin="16,0,0,0"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Content="Проверить всё"
+                    Command="{Binding RunDiagnosticsCommand}" />
+        </Grid>
+
+        <!-- ============ Тело страницы ============
+             Сводка, карточка адреса и список проверок прокручиваются вместе:
+             на окне 1024×680 они втроём выше области, а панель обслуживания
+             обязана остаться на виду. PageBody.MinHeight (см. code-behind)
+             равен высоте области, поэтому список тянется, а не жмётся кверху. -->
+        <ScrollViewer x:Name="PageScroll" Grid.Row="2" Margin="0,0,0,16"
+                      Style="{StaticResource ModernScrollViewerStyle}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly"
+                      SizeChanged="OnPageScrollSizeChanged">
+            <Grid x:Name="PageBody">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" MinHeight="96" />
+                </Grid.RowDefinitions>
+
+                <!-- ============ Сводка ============ -->
+                <Border x:Name="SummaryCard" Grid.Row="0"
+                        Style="{StaticResource CardStyle}"
+                        Height="88" Padding="0" Margin="0,0,0,16">
+                    <Grid ClipToBounds="True">
+                        <Grid Margin="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Grid Grid.Column="0" Width="40" Height="40" VerticalAlignment="Center">
+                                <Ellipse x:Name="SummaryRing" Width="40" Height="40"
+                                         Fill="{x:Null}"
+                                         Stroke="{StaticResource BrushSuccess}"
+                                         StrokeThickness="1.5" />
+                                <Path x:Name="SummaryGlyph"
+                                      Width="18" Height="18" Stretch="Uniform"
+                                      Data="{StaticResource IconCheckStroke}"
+                                      Fill="{x:Null}"
+                                      Stroke="{StaticResource BrushSuccess}"
+                                      StrokeThickness="1.5"
+                                      StrokeLineJoin="Round"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                <TextBlock x:Name="SummaryTitle"
+                                           Style="{StaticResource SectionTitleStyle}"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="Всё в порядке" />
+                                <TextBlock x:Name="SummaryCount"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Margin="0,4,0,0"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="0 из 14 проверок пройдено" />
+                            </StackPanel>
+
+                            <Grid Grid.Column="3" Width="200" Height="6" Margin="16,0,0,0"
+                                  VerticalAlignment="Center">
+                                <Border CornerRadius="3" Background="{StaticResource BrushInputBackground}" />
+                                <Border x:Name="SummaryProgress"
+                                        CornerRadius="3" Width="0"
+                                        HorizontalAlignment="Left"
+                                        Background="{DynamicResource BrushAccentGradient}" />
+                            </Grid>
+                        </Grid>
+
+                        <!-- DiagScanBar: полоса идёт сверху вниз, пока идёт прогон -->
+                        <Border x:Name="ScanBar" Height="2"
+                                VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                                Background="{DynamicResource BrushAccentDim}"
+                                Opacity="0" IsHitTestVisible="False">
+                            <Border.RenderTransform>
+                                <TranslateTransform Y="0" />
+                            </Border.RenderTransform>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- ============ Что видит сеть ============ -->
+                <controls:IpInfoCard Grid.Row="1" Margin="0,0,0,16" />
+
+                <!-- ============ Список проверок ============
+                     Собственной прокрутки нет намеренно: вложенный ScrollViewer съедал бы
+                     колесо мыши, а страница целиком уже прокручивается. -->
+                <Grid x:Name="RowsBox" Grid.Row="2">
+                    <StackPanel x:Name="RowsHost" VerticalAlignment="Top" />
+                </Grid>
+
+                <!-- ============ Пустое состояние ============ -->
+                <StackPanel x:Name="EmptyState" Grid.Row="2"
+                            MaxWidth="320"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                    <Path Width="48" Height="48" Stretch="Uniform"
+                          Data="{StaticResource IconFlaskStroke}"
+                          Fill="{x:Null}"
+                          Stroke="{StaticResource BrushTextDisabled}"
+                          StrokeThickness="1.25"
+                          StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          HorizontalAlignment="Center" />
+                    <TextBlock Margin="0,16,0,0"
+                               Text="Проверка ещё не запускалась"
+                               FontFamily="{StaticResource FontUI}"
+                               FontSize="{StaticResource FontSizeSectionTitle}"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               TextAlignment="Center" />
+                    <TextBlock Margin="0,6,0,0"
+                               Text="Нажмите «Проверить всё» — это займёт несколько секунд"
+                               FontFamily="{StaticResource FontUI}"
+                               FontSize="{StaticResource FontSizePageSubtitle}"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               LineHeight="18" LineStackingStrategy="BlockLineHeight"
+                               TextWrapping="Wrap" TextAlignment="Center" />
+                    <Button Margin="0,20,0,0" Width="160" Height="36"
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Content="Проверить всё"
+                            Command="{Binding RunDiagnosticsCommand}" />
+                </StackPanel>
+
+            </Grid>
+        </ScrollViewer>
+
+        <!-- ============ Обслуживание ============ -->
+        <Border Grid.Row="3" Style="{StaticResource CardStyle}">
+            <StackPanel>
+                <StackPanel x:Name="BusyBlock" Margin="0,0,0,16" Visibility="Collapsed">
+                    <Grid x:Name="BusyTrack" Height="2" ClipToBounds="True"
+                          Background="{StaticResource BrushInputBackground}">
+                        <Border x:Name="BusySweep" Width="96" HorizontalAlignment="Left"
+                                Background="{DynamicResource BrushAccentMid}">
+                            <Border.OpacityMask>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Offset="0" Color="#00FFFFFF" />
+                                    <GradientStop Offset="0.5" Color="#FFFFFFFF" />
+                                    <GradientStop Offset="1" Color="#00FFFFFF" />
+                                </LinearGradientBrush>
+                            </Border.OpacityMask>
+                            <Border.RenderTransform>
+                                <TranslateTransform X="-96" />
+                            </Border.RenderTransform>
+                        </Border>
+                    </Grid>
+                    <TextBlock x:Name="BusyText" Margin="0,8,0,0"
+                               Style="{StaticResource CaptionTextStyle}"
+                               Foreground="{StaticResource BrushTextTertiary}" />
+                </StackPanel>
+
+                <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ОБСЛУЖИВАНИЕ" />
+
+                <!-- WrapPanel, а не StackPanel: на окне 1024 четыре кнопки в строку
+                     не помещаются и уезжали за край карточки. -->
+                <WrapPanel Orientation="Horizontal" Margin="0,14,0,-12">
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Height="36" Margin="0,0,12,12"
+                            Content="Обновить список IP"
+                            Command="{Binding UpdateIpsetCommand}" />
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Height="36" Margin="0,0,12,12"
+                            Content="Проверить hosts"
+                            Command="{Binding CheckHostsCommand}" />
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Height="36" Margin="0,0,12,12"
+                            Content="Проверить обновления"
+                            Command="{Binding CheckUpdatesCommand}" />
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Height="36" Margin="0,0,0,12"
+                            Content="Открыть папку zapret"
+                            Command="{Binding OpenFolderCommand}" />
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

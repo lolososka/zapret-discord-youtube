@@ -1,0 +1,66 @@
+<!--
+    Слои 2 и 3 из §5 «Layer stack»: кэшированная амбиентная подсветка + дизер-плитка.
+    Оба BlurEffect в приложении живут ровно здесь и больше нигде (§10).
+    Градиент эллипса A строится от акцента и пересобирается кодом при смене акцента,
+    поэтому кисть объявлена локально (никогда не StaticResource — её мутируют).
+-->
+<UserControl x:Class="ZapretGui.Controls.AmbientBackground"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             IsHitTestVisible="False"
+             Focusable="False"
+             IsTabStop="False">
+
+    <Grid ClipToBounds="True">
+
+        <!-- Слой 2. RenderAtScale 0.30 + EnableClearType=False — блюр растрируется в треть разрешения. -->
+        <Grid x:Name="AmbientHost"
+              ClipToBounds="True"
+              IsHitTestVisible="False"
+              Opacity="0.55">
+            <Grid.CacheMode>
+                <BitmapCache RenderAtScale="0.30" EnableClearType="False" SnapsToDevicePixels="False" />
+            </Grid.CacheMode>
+
+            <Ellipse x:Name="GlowA"
+                     Width="900" Height="700"
+                     HorizontalAlignment="Left" VerticalAlignment="Top"
+                     Margin="-140,-180,0,0"
+                     RenderTransformOrigin="0.5,0.5"
+                     IsHitTestVisible="False">
+                <Ellipse.Fill>
+                    <RadialGradientBrush GradientOrigin="0.5,0.5" Center="0.5,0.5" RadiusX="0.5" RadiusY="0.5">
+                        <GradientStop Offset="0.00" Color="#2429C4FA" />
+                        <GradientStop Offset="0.72" Color="#0029C4FA" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.Effect>
+                    <BlurEffect Radius="110" KernelType="Gaussian" RenderingBias="Performance" />
+                </Ellipse.Effect>
+                <!-- RenderTransform собирается в code-behind: BAML вправе заморозить Freezable. -->
+            </Ellipse>
+
+            <Ellipse x:Name="GlowB"
+                     Width="1100" Height="820"
+                     HorizontalAlignment="Left" VerticalAlignment="Top"
+                     Margin="620,240,0,0"
+                     RenderTransformOrigin="0.5,0.5"
+                     IsHitTestVisible="False">
+                <Ellipse.Fill>
+                    <RadialGradientBrush GradientOrigin="0.5,0.5" Center="0.5,0.5" RadiusX="0.5" RadiusY="0.5">
+                        <GradientStop Offset="0.00" Color="#241E2A6B" />
+                        <GradientStop Offset="0.80" Color="#001E2A6B" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.Effect>
+                    <BlurEffect Radius="140" KernelType="Gaussian" RenderingBias="Performance" />
+                </Ellipse.Effect>
+            </Ellipse>
+        </Grid>
+
+        <!-- Слой 3. Плитка 3×3 поверх подсветки — убирает бандинг градиентов. -->
+        <Rectangle x:Name="Dither"
+                   Fill="{StaticResource BrushDitherDot}"
+                   IsHitTestVisible="False" />
+    </Grid>
+</UserControl>

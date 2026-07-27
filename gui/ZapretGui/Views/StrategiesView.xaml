@@ -1,0 +1,745 @@
+<UserControl x:Class="ZapretGui.Views.StrategiesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:core="clr-namespace:ZapretGui.Core"
+             xmlns:fx="clr-namespace:ZapretGui.Controls"
+             xmlns:views="clr-namespace:ZapretGui.Views"
+             Background="{StaticResource BrushBgSunken}"
+             FontFamily="{StaticResource FontUI}"
+             FontSize="{StaticResource FontSizeBody}"
+             Foreground="{StaticResource BrushTextSecondary}"
+             SnapsToDevicePixels="True"
+             UseLayoutRounding="True">
+
+    <UserControl.Resources>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- Чип «ALT»: показывается только у стратегий с непустым Variant. -->
+        <Style x:Key="AltChipStyle" TargetType="Border" BasedOn="{StaticResource TagChipStyle}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BrushWarning}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource BrushWarning}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Variant}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- «Работала у вас» — единственная отметка, которой можно верить: её ставит
+             сам обход, продержавшийся минуту, а не наше предположение о провайдере. -->
+        <Style x:Key="WorkedChipStyle" TargetType="Border" BasedOn="{StaticResource TagChipStyle}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BrushSuccess}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource BrushSuccess}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasWorked}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FavoriteChipStyle" TargetType="Border" BasedOn="{StaticResource TagChipStyle}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccentDim}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource BrushAccentMid}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFavorite}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Нейтральная подпись вместо «рекомендуется»: general и general (ALT) —
+             просто удобная точка старта перебора, а не гарантия работы. -->
+        <Style x:Key="PlainStartChipStyle" TargetType="Border" BasedOn="{StaticResource TagChipStyle}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BrushInfo}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource BrushInfo}" />
+            <Setter Property="ToolTip"
+                    Value="С них проще начать перебор, но у вашего провайдера может работать другая" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRecommended}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ================= Строка списка ================= -->
+
+        <DataTemplate x:Key="StrategyRowTemplate" DataType="{x:Type core:Strategy}">
+            <Grid VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Style="{StaticResource IconButtonStyle}"
+                        Margin="0,0,10,0"
+                        VerticalAlignment="Center"
+                        Tag="{Binding}"
+                        Click="OnFavoriteClick"
+                        AutomationProperties.Name="Избранное">
+                    <Button.ToolTip>
+                        <ToolTip Content="Добавить в избранное или убрать" />
+                    </Button.ToolTip>
+                    <Path Width="15" Height="15"
+                          Stretch="Uniform"
+                          Data="{StaticResource IconStarFill}"
+                          SnapsToDevicePixels="True">
+                        <Path.Style>
+                            <Style TargetType="Path">
+                                <Setter Property="Fill" Value="{StaticResource BrushTextDisabled}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                        <Setter Property="Fill" Value="{DynamicResource BrushAccentMid}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Path.Style>
+                    </Path>
+                </Button>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Style="{StaticResource CardTitleStyle}"
+                                   Text="{Binding DisplayName}" />
+
+                        <Border Grid.Column="1" Style="{StaticResource AltChipStyle}"
+                                ToolTip="{Binding Variant}">
+                            <TextBlock Text="ALT" VerticalAlignment="Center" />
+                        </Border>
+
+                        <Border Grid.Column="2" Style="{StaticResource WorkedChipStyle}"
+                                ToolTip="Эта стратегия у вас уже проработала дольше минуты">
+                            <TextBlock Text="работала у вас" VerticalAlignment="Center" />
+                        </Border>
+
+                        <Border Grid.Column="3" Style="{StaticResource FavoriteChipStyle}">
+                            <TextBlock Text="избранное" VerticalAlignment="Center" />
+                        </Border>
+
+                        <Border Grid.Column="4" Style="{StaticResource PlainStartChipStyle}">
+                            <TextBlock Text="обычный старт" VerticalAlignment="Center" />
+                        </Border>
+                    </Grid>
+
+                    <!-- Строка аргументов у всех стратегий начинается одинаково и в 88 px
+                         превращается в неразличимый шум — она уехала в диалог «Подробнее».
+                         Здесь — человеческое описание, технический разбор в подсказке. -->
+                    <TextBlock Style="{StaticResource CaptionTextStyle}"
+                               Margin="0,3,0,0"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               Text="{Binding Summary}"
+                               ToolTip="{Binding TechnicalSummary}"
+                               TextWrapping="Wrap"
+                               MaxHeight="34"
+                               TextTrimming="CharacterEllipsis" />
+
+                    <ItemsControl Margin="0,5,0,0"
+                                  ItemsSource="{Binding Tags}"
+                                  Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource TagChipStyle}" Margin="0,0,6,0">
+                                    <TextBlock Text="{Binding}" VerticalAlignment="Center" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <Button Grid.Column="2"
+                        Style="{StaticResource IconButtonStyle}"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center"
+                        Tag="{Binding}"
+                        Click="OnDetailsClick"
+                        ToolTip="Подробнее"
+                        AutomationProperties.Name="Подробнее">
+                    <Path Style="{StaticResource IconSmallStyle}"
+                          Data="{StaticResource IconInfoStroke}"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Контейнер строки: выделение — BrushAccentWash + тик 2×24 слева. -->
+        <Style x:Key="StrategyRowStyle" TargetType="ListBoxItem">
+            <!-- 88 вместо 64: строка теперь несёт описание и теги -->
+            <!-- 104: описание переносится на две строки, ниже — теги -->
+            <Setter Property="Height" Value="104" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="fx:Fx.Reveal" Value="True" />
+            <Setter Property="fx:Fx.RevealIndex"
+                    Value="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource Self}}" />
+            <EventSetter Event="MouseDoubleClick" Handler="OnRowDoubleClick" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Grid>
+                            <Border x:Name="Base"
+                                    CornerRadius="{StaticResource Radius6}"
+                                    Background="{StaticResource BrushSurfaceRaised}"
+                                    BorderThickness="1"
+                                    BorderBrush="{StaticResource BrushHairlineWeak}" />
+
+                            <Border x:Name="Hover"
+                                    CornerRadius="{StaticResource Radius6}"
+                                    Background="{StaticResource BrushCardHoverOverlay}"
+                                    Opacity="0" />
+
+                            <Border x:Name="Selected"
+                                    CornerRadius="{StaticResource Radius6}"
+                                    Background="{DynamicResource BrushAccentWash}"
+                                    Opacity="0" />
+
+                            <Rectangle x:Name="Tick"
+                                       Width="2" Height="24"
+                                       RadiusX="1" RadiusY="1"
+                                       HorizontalAlignment="Left"
+                                       VerticalAlignment="Center"
+                                       Fill="{DynamicResource BrushNavIndicator}"
+                                       Opacity="0" />
+
+                            <Border x:Name="FocusRing" Margin="-3"
+                                    CornerRadius="{StaticResource Radius8}"
+                                    BorderThickness="1"
+                                    BorderBrush="{StaticResource BrushFocusRing}"
+                                    Opacity="0" />
+
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              SnapsToDevicePixels="True" />
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Base" Property="BorderBrush"
+                                        Value="{StaticResource BrushHairlineStrong}" />
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Hover"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="1" Duration="0:0:0.15"
+                                                             EasingFunction="{StaticResource EaseOutCubic}" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Hover"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0" Duration="0:0:0.20"
+                                                             EasingFunction="{StaticResource EaseOutCubic}" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Selected" Property="Opacity" Value="1" />
+                                <Setter TargetName="Tick" Property="Opacity" Value="1" />
+                                <Setter TargetName="Base" Property="BorderBrush"
+                                        Value="{DynamicResource BrushAccentDim}" />
+                            </Trigger>
+
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="FocusRing"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="1" Duration="0:0:0.09" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="FocusRing"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0" Duration="0:0:0.09" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ItemsPanelTemplate x:Key="StrategyItemsPanel">
+            <VirtualizingStackPanel Orientation="Vertical" />
+        </ItemsPanelTemplate>
+
+        <ControlTemplate x:Key="StrategyListTemplate" TargetType="ListBox">
+            <ScrollViewer x:Name="PART_ScrollHost"
+                          Style="{StaticResource ModernScrollViewerStyle}"
+                          CanContentScroll="True"
+                          Padding="0">
+                <ItemsPresenter SnapsToDevicePixels="True" />
+            </ScrollViewer>
+        </ControlTemplate>
+
+        <!-- Строка результатов перебора -->
+        <DataTemplate x:Key="TrialRowTemplate" DataType="{x:Type core:StrategyTrial}">
+            <Grid Height="26">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="72" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           VerticalAlignment="Center"
+                           FontSize="{StaticResource FontSizeCaption}"
+                           TextTrimming="CharacterEllipsis"
+                           Text="{Binding Title}"
+                           ToolTip="{Binding Detail}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Success}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"
+                           Style="{StaticResource InlineNumericStyle}"
+                           Text="{Binding ScoreText}" />
+
+                <TextBlock Grid.Column="2"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
+                           Style="{StaticResource InlineNumericStyle}"
+                           Foreground="{StaticResource BrushTextTertiary}"
+                           Text="{Binding LatencyText}" />
+            </Grid>
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+    <Grid>
+
+        <!-- ================= Содержимое страницы ================= -->
+        <Grid Margin="{StaticResource PagePadding}" MaxWidth="908">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="56" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="56" />
+            </Grid.RowDefinitions>
+
+            <!-- Шапка страницы -->
+            <Grid Grid.Row="0">
+                <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom">
+                    <TextBlock Style="{StaticResource PageTitleStyle}" Text="Стратегии" />
+                    <TextBlock Style="{StaticResource PageSubtitleStyle}"
+                               Margin="0,4,0,0"
+                               Text="{Binding Subtitle, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom">
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Height="32"
+                            Margin="0,0,12,0"
+                            Content="Подобрать автоматически"
+                            Command="{Binding AutoPickCommand}"
+                            ToolTip="Перебирает все стратегии по очереди и проверяет, открываются ли сайты. Обход будет перезапускаться, это займёт несколько минут" />
+
+                    <TextBox x:Name="Search"
+                             Style="{StaticResource SearchBoxStyle}"
+                             VerticalAlignment="Center"
+                             Tag="Поиск по имени и аргументам"
+                             TextChanged="OnSearchChanged"
+                             AutomationProperties.Name="Поиск стратегии" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Чипы-фильтры -->
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Height="28" Margin="0,8,0,0">
+                <RadioButton x:Name="ChipAll" Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="Все" Tag="all"
+                             IsChecked="True" Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="Избранные" Tag="fav"
+                             Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="Discord" Tag="discord"
+                             Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="YouTube" Tag="youtube"
+                             Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="ALT" Tag="alt"
+                             Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="Игры" Tag="games"
+                             Checked="OnChipChecked" />
+                <Button Height="28"
+                        Margin="12,0,0,0"
+                        Padding="12,0"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Content="Свои сайты"
+                        Click="OnUserListsClick"
+                        ToolTip="Добавить домены и IP-исключения для всех стратегий" />
+            </StackPanel>
+
+            <!-- ================= Панель перебора ================= -->
+            <Border Grid.Row="2"
+                    Style="{StaticResource CardStyle}"
+                    Margin="0,12,0,0"
+                    Visibility="{Binding Tester.HasActivity, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                        <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource MicroLabelStyle}" Text="АВТОПОДБОР" />
+                            <TextBlock Style="{StaticResource BodyTextStyle}"
+                                       Margin="0,4,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="{Binding Tester.StatusText}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center">
+                            <Button Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    Content="Применить лучшую"
+                                    Click="OnApplyBestClick"
+                                    Visibility="{Binding Tester.CanApplyBest, Converter={StaticResource BoolToVis}}" />
+
+                            <Button Style="{StaticResource GhostButtonStyle}"
+                                    Height="32"
+                                    Margin="12,0,0,0"
+                                    Content="Отмена"
+                                    Command="{Binding CancelAutoPickCommand}"
+                                    Visibility="{Binding Tester.IsRunning, Converter={StaticResource BoolToVis}}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <ProgressBar Grid.Row="1"
+                                 Style="{StaticResource ModernProgressBarStyle}"
+                                 Margin="0,12,0,0"
+                                 Minimum="0" Maximum="1"
+                                 Value="{Binding Tester.Progress, Mode=OneWay}" />
+
+                    <Border Grid.Row="2"
+                            Margin="0,12,0,0"
+                            Background="{StaticResource BrushBgSunken}"
+                            BorderBrush="{StaticResource BrushHairlineWeak}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource Radius6}"
+                            Padding="12,8">
+                        <ScrollViewer Style="{StaticResource ModernScrollViewerStyle}"
+                                      MaxHeight="132"
+                                      fx:Fx.StickyScroll="True">
+                            <ItemsControl ItemsSource="{Binding Tester.Results}"
+                                          ItemTemplate="{StaticResource TrialRowTemplate}"
+                                          Focusable="False" />
+                        </ScrollViewer>
+                    </Border>
+
+                    <TextBlock Grid.Row="3"
+                               Style="{StaticResource CaptionTextStyle}"
+                               Margin="0,8,0,0"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               TextWrapping="Wrap"
+                               Text="Каждая стратегия запускается на несколько секунд, затем проверяется доступность YouTube, Discord и Google. Во время перебора связь будет прерываться." />
+                </Grid>
+            </Border>
+
+            <!-- Список -->
+            <Grid Grid.Row="3" Margin="0,16,0,0">
+                <ListBox x:Name="List"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="0"
+                         Focusable="False"
+                         SelectionMode="Single"
+                         IsSynchronizedWithCurrentItem="False"
+                         HorizontalContentAlignment="Stretch"
+                         AlternationCount="64"
+                         ItemTemplate="{StaticResource StrategyRowTemplate}"
+                         ItemContainerStyle="{StaticResource StrategyRowStyle}"
+                         ItemsPanel="{StaticResource StrategyItemsPanel}"
+                         Template="{StaticResource StrategyListTemplate}"
+                         SelectionChanged="OnSelectionChanged"
+                         ScrollViewer.CanContentScroll="True"
+                         ScrollViewer.PanningMode="VerticalOnly"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling"
+                         VirtualizingPanel.ScrollUnit="Pixel" />
+
+                <!-- Пустое состояние (§9) -->
+                <StackPanel MaxWidth="320"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Visibility="{Binding IsEmpty, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                    <Path Data="{StaticResource IconLayersStroke}"
+                          Width="48" Height="48"
+                          Stretch="Uniform"
+                          Fill="{x:Null}"
+                          Stroke="{StaticResource BrushTextDisabled}"
+                          StrokeThickness="1.25"
+                          StrokeLineJoin="Round"
+                          HorizontalAlignment="Center" />
+                    <TextBlock Style="{StaticResource SectionTitleStyle}"
+                               Margin="0,16,0,0"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               HorizontalAlignment="Center"
+                               Text="Ничего не найдено" />
+                    <TextBlock Style="{StaticResource PageSubtitleStyle}"
+                               Margin="0,6,0,0"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               LineHeight="18"
+                               Text="Измените запрос или сбросьте фильтры" />
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="0,20,0,0"
+                            Width="160" Height="36"
+                            HorizontalAlignment="Center"
+                            Content="Сбросить фильтры"
+                            Click="OnResetFiltersClick" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Панель действий -->
+            <Grid Grid.Row="4">
+                <Border Style="{StaticResource SeparatorStyle}" VerticalAlignment="Top" />
+
+                <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource CaptionTextStyle}"
+                                   Text="{Binding ServiceStateText}" />
+                        <TextBlock Margin="6,0,0,0"
+                                   Foreground="{StaticResource BrushTextTertiary}"
+                                   Text="{Binding InstalledServiceStrategy, StringFormat='· {0}'}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding InstalledServiceStrategy}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource CaptionTextStyle}"
+                               Margin="0,2,0,0"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               Text="Служба стартует вместе с Windows и конфликтует с ручным запуском" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <Button x:Name="ApplyButton"
+                            Width="132" Height="36"
+                            Content="Применить"
+                            Click="OnApplyClick">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedStrategy}" Value="{x:Null}">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Tester.IsRunning}" Value="True">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <Button Style="{StaticResource SecondaryButtonStyle}"
+                            Margin="12,0,0,0"
+                            Height="36"
+                            Content="Установить службу"
+                            Command="{Binding InstallServiceCommand}" />
+
+                    <Button Style="{StaticResource DangerOutlineButtonStyle}"
+                            Margin="12,0,0,0"
+                            Height="36"
+                            Content="Удалить службу"
+                            Command="{Binding RemoveServiceCommand}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- ================= Модалка «Подробнее» ================= -->
+        <Grid x:Name="ModalHost" Visibility="Collapsed" Focusable="True"
+              KeyDown="OnModalKeyDown">
+            <Rectangle x:Name="Scrim"
+                       Fill="{StaticResource BrushScrim}"
+                       Opacity="0"
+                       MouseLeftButtonDown="OnScrimClick" />
+
+            <Grid x:Name="ModalWrap"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Opacity="0"
+                  RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <TransformGroup>
+                        <ScaleTransform x:Name="ModalScale" ScaleX="0.98" ScaleY="0.98" />
+                        <TranslateTransform x:Name="ModalSlide" Y="10" />
+                    </TransformGroup>
+                </Grid.RenderTransform>
+
+                <!-- Тень E3 живёт на отдельном слое: TextBlock не должен быть потомком Effect. -->
+                <Border Background="{StaticResource BrushSurfaceOverlay}"
+                        CornerRadius="{StaticResource Radius12}"
+                        IsHitTestVisible="False">
+                    <Border.Effect>
+                        <DropShadowEffect Color="{StaticResource ColorShadow}"
+                                          BlurRadius="40" ShadowDepth="8"
+                                          Direction="270" Opacity="0.6" />
+                    </Border.Effect>
+                </Border>
+
+                <Border x:Name="ModalCard"
+                        Width="620"
+                        Background="{StaticResource BrushSurfaceOverlay}"
+                        BorderBrush="{StaticResource BrushHairlineStrong}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius12}"
+                        Padding="20"
+                        Focusable="True"
+                        FocusVisualStyle="{x:Null}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <TextBlock Style="{StaticResource SectionTitleStyle}"
+                                       HorizontalAlignment="Left"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,36,0"
+                                       Text="{Binding DisplayName}" />
+                            <Button Style="{StaticResource IconButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    ToolTip="Закрыть"
+                                    AutomationProperties.Name="Закрыть"
+                                    Click="OnCloseModalClick">
+                                <Path Style="{StaticResource IconSmallStyle}"
+                                      Data="{StaticResource IconCloseStroke}"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            </Button>
+                        </Grid>
+
+                        <TextBlock Grid.Row="1"
+                                   Style="{StaticResource BodyTextStyle}"
+                                   Margin="0,12,0,0"
+                                   TextWrapping="Wrap"
+                                   LineHeight="20"
+                                   Text="{Binding Summary}" />
+
+                        <TextBlock Grid.Row="2"
+                                   Style="{StaticResource MicroLabelStyle}"
+                                   Margin="0,16,0,8"
+                                   Text="ЧТО ДЕЛАЕТ ПОДРОБНО" />
+
+                        <TextBlock Grid.Row="3"
+                                   Style="{StaticResource CaptionTextStyle}"
+                                   TextWrapping="Wrap"
+                                   LineHeight="18"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   Text="{Binding TechnicalSummary}" />
+
+                        <TextBlock Grid.Row="4"
+                                   Style="{StaticResource MicroLabelStyle}"
+                                   Margin="0,16,0,8"
+                                   Text="АРГУМЕНТЫ WINWS.EXE" />
+
+                        <Border Grid.Row="5"
+                                Background="{StaticResource BrushBgSunken}"
+                                BorderBrush="{StaticResource BrushHairlineWeak}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource Radius6}"
+                                Padding="12">
+                            <ScrollViewer Style="{StaticResource ModernScrollViewerStyle}"
+                                          MaxHeight="200">
+                                <TextBlock Style="{StaticResource InlineNumericStyle}"
+                                           Text="{Binding RawCommandLine}"
+                                           TextWrapping="Wrap"
+                                           LineHeight="18" />
+                            </ScrollViewer>
+                        </Border>
+
+                        <StackPanel Grid.Row="6"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,20,0,0">
+                            <Button Style="{StaticResource SecondaryButtonStyle}"
+                                    Content="Копировать"
+                                    Click="OnCopyClick" />
+                            <Button Style="{StaticResource GhostButtonStyle}"
+                                    Margin="12,0,0,0"
+                                    Content="Закрыть"
+                                    Click="OnCloseModalClick" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <views:UserListsEditor x:Name="UserListsEditor"
+                               Panel.ZIndex="20" />
+    </Grid>
+</UserControl>

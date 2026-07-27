@@ -1,0 +1,12 @@
+.vs/
+.vscode/
+publish/
+work/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.log
+TestResults/
+artifacts/
+ZapretGui/Assets/Geoform.ttf

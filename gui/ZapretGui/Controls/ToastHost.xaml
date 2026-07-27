@@ -1,0 +1,55 @@
+<!--
+    Хост тостов (§9 «Toast», §4 уровень E2). Сами карточки собираются в code-behind:
+    им нужны индивидуальные раскадровки, таймер выдержки и локальные кисти.
+    Панель без Background — клики сквозь неё проходят в страницу.
+-->
+<UserControl x:Class="ZapretGui.Controls.ToastHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False"
+             IsTabStop="False">
+
+    <UserControl.Resources>
+
+        <!-- Кнопка закрытия тоста 20×20: заливка меняется сеттером, анимации кистей нет. -->
+        <Style x:Key="ToastCloseButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chip"
+                                Background="Transparent"
+                                CornerRadius="{StaticResource Radius4}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background"
+                                        Value="{StaticResource BrushSurfaceHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chip" Property="Background"
+                                        Value="{StaticResource BrushSurfacePressed}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <StackPanel x:Name="Stack"
+                    Orientation="Vertical"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="24" />
+    </Grid>
+</UserControl>

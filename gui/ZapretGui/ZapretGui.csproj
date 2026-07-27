@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ZapretGUI</AssemblyName>
+    <RootNamespace>ZapretGui</RootNamespace>
+    <AssemblyTitle>Zapret Control Center</AssemblyTitle>
+    <Product>Zapret Control Center</Product>
+    <Description>Графическая оболочка для zapret-discord-youtube</Description>
+    <Company>Zapret GUI</Company>
+    <Version>1.10.0</Version>
+    <FileVersion>1.10.0.0</FileVersion>
+    <AssemblyVersion>1.10.0.0</AssemblyVersion>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WFAC010 требует задавать DPI через WinForms-API. Это WPF-приложение,
+         WinForms подключён только ради NotifyIcon — настройки DPI остаются в манифесте. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF/WinForms-проекты не получают System.IO и System.Net.Http в implicit usings -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+    <!-- ...зато получают WinForms и GDI+, которые конфликтуют с типами WPF по именам -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,656 @@
+<!--
+    Страница «Панель» (§8 «Панель»).
+
+    Сетка тянется: колодец занимает всё, что осталось, правая колонка — 300…380.
+    Ниже 900 DIP по ширине колонка уезжает под колодец (см. DashboardView.xaml.cs),
+    иначе на минимальном окне 1024×680 обе колонки превращаются в кашу.
+-->
+<UserControl x:Class="ZapretGui.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ZapretGui.Views"
+             xmlns:ctl="clr-namespace:ZapretGui.Controls"
+             Background="{StaticResource BrushBgSunken}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             FontFamily="{StaticResource FontUI}"
+             FontSize="{StaticResource FontSizeBody}"
+             Foreground="{StaticResource BrushTextSecondary}">
+
+    <UserControl.Resources>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:BypassStateToDialStateConverter x:Key="DialState" />
+
+        <!-- Чип-кнопка: скруглённая пилюля в шапке страницы. -->
+        <ControlTemplate x:Key="ChipPillTemplate" TargetType="Button">
+            <Grid>
+                <Border x:Name="Bg" CornerRadius="16"
+                        Background="{StaticResource BrushSurfaceRaised}"
+                        BorderBrush="{StaticResource BrushHairlineStrong}"
+                        BorderThickness="1"
+                        SnapsToDevicePixels="True" />
+                <Border x:Name="Hover" CornerRadius="16"
+                        Background="{StaticResource BrushSurfaceHover}"
+                        Opacity="0" />
+                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Stretch" />
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Hover"
+                                                 Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.15"
+                                                 EasingFunction="{StaticResource EaseOutCubic}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Hover"
+                                                 Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="0:0:0.20"
+                                                 EasingFunction="{StaticResource EaseOutCubic}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.ExitActions>
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource BrushFocusRing}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- Строка-чип внизу колодца: радиус 6, слабая волосяная рамка. -->
+        <ControlTemplate x:Key="ChipRowTemplate" TargetType="Button">
+            <Grid>
+                <Border x:Name="Bg" CornerRadius="{StaticResource Radius6}"
+                        Background="{StaticResource BrushSurfaceRaised}"
+                        BorderBrush="{StaticResource BrushHairlineWeak}"
+                        BorderThickness="1"
+                        SnapsToDevicePixels="True" />
+                <Border x:Name="Hover" CornerRadius="{StaticResource Radius6}"
+                        Background="{StaticResource BrushSurfaceHover}"
+                        Opacity="0" />
+                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Stretch" />
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource BrushHairlineStrong}" />
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Hover"
+                                                 Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="0:0:0.15"
+                                                 EasingFunction="{StaticResource EaseOutCubic}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Hover"
+                                                 Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="0:0:0.20"
+                                                 EasingFunction="{StaticResource EaseOutCubic}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.ExitActions>
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource BrushFocusRing}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- Метка строки быстрых переключателей. -->
+        <Style x:Key="ToggleRowLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextStyle}">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+
+        <!-- Точка состояния службы. -->
+        <Style x:Key="ServiceDotStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Fill" Value="{StaticResource BrushTextDisabled}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ServiceState}" Value="Running">
+                    <Setter Property="Fill" Value="{StaticResource BrushSuccess}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding ServiceState}" Value="Stopped">
+                    <Setter Property="Fill" Value="{StaticResource BrushWarning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding ServiceState}" Value="Pending">
+                    <Setter Property="Fill" Value="{StaticResource BrushStateArming}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Значок результата проверки доступа. -->
+        <Style x:Key="ProbeIconStyle" TargetType="Path" BasedOn="{StaticResource IconSmallStyle}">
+            <Setter Property="Data" Value="{StaticResource IconCheckStroke}" />
+            <Setter Property="Stroke" Value="{StaticResource BrushSuccess}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Ok}" Value="False">
+                    <Setter Property="Data" Value="{StaticResource IconAlertStroke}" />
+                    <Setter Property="Stroke" Value="{StaticResource BrushDanger}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ProbeLatencyStyle" TargetType="TextBlock" BasedOn="{StaticResource InlineNumericStyle}">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Ok}" Value="False">
+                    <Setter Property="Foreground" Value="{StaticResource BrushDanger}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Пустое состояние блока проверки доступа. -->
+        <Style x:Key="ProbeEmptyStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextStyle}">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Probes.Count}" Value="0">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="ProbeRowTemplate">
+            <Grid Height="26" ToolTip="{Binding Error}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Path Style="{StaticResource ProbeIconStyle}" />
+
+                <TextBlock Grid.Column="1" Margin="10,0,8,0"
+                           Style="{StaticResource CaptionTextStyle}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Text="{Binding Site.Name}" />
+
+                <TextBlock Grid.Column="2"
+                           Style="{StaticResource ProbeLatencyStyle}"
+                           VerticalAlignment="Center"
+                           Text="{Binding LatencyMs, StringFormat={}{0} мс}" />
+            </Grid>
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+    <!-- HorizontalAlignment не задаём: Stretch + MaxWidth сам центрирует содержимое
+         и при этом отдаёт ему всю доступную ширину вплоть до 1320. -->
+    <Grid Margin="32,24,32,24" MaxWidth="1320">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="20" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Шапка страницы ============ -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Панель" />
+                <TextBlock Style="{StaticResource PageSubtitleStyle}" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           Text="Обход DPI · Discord и YouTube" />
+            </StackPanel>
+
+            <Button Grid.Column="1" Width="260" Height="32" Padding="14,0"
+                    Margin="16,0,0,0"
+                    VerticalAlignment="Center" Cursor="Hand"
+                    FocusVisualStyle="{x:Null}"
+                    ctl:Fx.PressScale="True"
+                    Template="{StaticResource ChipPillTemplate}"
+                    Click="OnStrategyChipClick"
+                    ToolTip="{Binding SelectedStrategySummary}"
+                    AutomationProperties.Name="Открыть страницу стратегий">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Style="{StaticResource CaptionTextStyle}" FontSize="12"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               VerticalAlignment="Center" Text="Стратегия:" />
+
+                    <TextBlock Grid.Column="1" Margin="8,0,8,0"
+                               FontFamily="{StaticResource FontMono}" FontSize="12"
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Text="{Binding SelectedStrategyName}" />
+
+                    <Path Grid.Column="2" Width="8" Height="8"
+                          Stretch="Uniform" Fill="{x:Null}"
+                          Stroke="{StaticResource BrushTextTertiary}"
+                          StrokeThickness="1.5" StrokeLineJoin="Round"
+                          VerticalAlignment="Center"
+                          Data="{StaticResource IconChevronRightStroke}" />
+                </Grid>
+            </Button>
+        </Grid>
+
+        <!-- ============ Плашка обновления ============ -->
+        <Border Grid.Row="2" Height="48" Margin="0,0,0,16"
+                CornerRadius="{StaticResource Radius6}"
+                Background="#144FA8FF" BorderBrush="#734FA8FF" BorderThickness="1"
+                Padding="16,0"
+                Visibility="{Binding HasUpdate, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Path Width="16" Height="16" Stretch="Uniform" Fill="{x:Null}"
+                      Stroke="{StaticResource BrushInfo}" StrokeThickness="1.5"
+                      StrokeLineJoin="Round" VerticalAlignment="Center"
+                      Data="{StaticResource IconInfoStroke}" />
+
+                <TextBlock Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center"
+                           Style="{StaticResource BodyTextStyle}"
+                           Foreground="{StaticResource BrushTextPrimary}"
+                           TextTrimming="CharacterEllipsis"
+                           Text="{Binding UpdateAvailableVersion, StringFormat=Доступна версия {0}}" />
+
+                <Button Grid.Column="2" Style="{StaticResource LinkButtonStyle}"
+                        Content="Скачать" Click="OnDownloadUpdateClick" />
+            </Grid>
+        </Border>
+
+        <!-- ============ Тело страницы ============
+             Прокрутка включена всегда: на низком окне колодцу негде поместиться,
+             а на высоком BodyGrid.MinHeight (см. code-behind) равен высоте области,
+             и звёздочные строки колодца растягиваются вместо провала под графиком. -->
+        <ScrollViewer x:Name="BodyScroll" Grid.Row="3"
+                      Style="{StaticResource ModernScrollViewerStyle}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly"
+                      SizeChanged="OnBodyScrollSizeChanged">
+            <Grid x:Name="BodyGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="340" />
+                    <ColumnDefinition x:Name="GapColumn" Width="24" />
+                    <ColumnDefinition x:Name="AsideColumn" Width="0.34*" MinWidth="300" MaxWidth="380" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- ===== Колодец мощности ===== -->
+                <Border Grid.Column="0" Grid.Row="0" Padding="32"
+                        CornerRadius="{StaticResource Radius8}"
+                        Background="#0A0D12"
+                        BorderBrush="{StaticResource BrushHairlineWeak}"
+                        BorderThickness="1"
+                        ctl:Fx.Reveal="True" ctl:Fx.RevealIndex="0">
+                    <!-- Свободная высота делится между тремя промежутками и осциллографом,
+                         поэтому под графиком не остаётся одного большого провала. -->
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="0.8*" MinHeight="16" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="0.9*" MinHeight="28" />
+                            <RowDefinition Height="2.4*" MinHeight="96" MaxHeight="240" />
+                            <RowDefinition Height="0.6*" MinHeight="20" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <ctl:PowerDial x:Name="Dial" Grid.Row="1"
+                                       HorizontalAlignment="Center"
+                                       State="{Binding BypassState, Converter={StaticResource DialState}}"
+                                       UptimeText="{Binding UptimeText}"
+                                       Activated="OnDialActivated"
+                                       Deactivated="OnDialDeactivated" />
+
+                        <!-- Осциллограф: тянется по ширине колодца и по высоте своей строки,
+                             перестраивается по TrafficMonitor.Sampled раз в 500 мс. -->
+                        <Border x:Name="ScopeFrame" Grid.Row="3"
+                                Background="{StaticResource BrushBgSunken}"
+                                CornerRadius="{StaticResource Radius8}"
+                                ClipToBounds="True">
+                            <Grid x:Name="ScopeContent">
+                                <!-- Сетка графика долями, а не фиксированным шагом:
+                                     иначе на высоком окне линии сбиваются в верхний угол. -->
+                                <Grid IsHitTestVisible="False">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <Rectangle Grid.Row="0" Height="1" VerticalAlignment="Top"
+                                               Fill="{StaticResource BrushScopeGrid}" />
+                                    <Rectangle Grid.Row="1" Height="1" VerticalAlignment="Top"
+                                               Fill="{StaticResource BrushScopeGrid}" />
+                                    <Rectangle Grid.Row="2" Height="1" VerticalAlignment="Top"
+                                               Fill="{StaticResource BrushScopeGrid}" />
+                                    <Rectangle Grid.Row="3" Height="1" VerticalAlignment="Top"
+                                               Fill="{StaticResource BrushScopeGrid}" />
+                                    <Rectangle Grid.Row="3" Height="1" VerticalAlignment="Bottom"
+                                               Fill="{StaticResource BrushScopeGrid}" />
+                                </Grid>
+
+                                <Canvas x:Name="ScopeCanvas" ClipToBounds="True"
+                                        IsHitTestVisible="False"
+                                        SizeChanged="OnScopeSizeChanged">
+                                    <!-- Заливка под кривой: маска даёт затухание вниз, цвет остаётся акцентным. -->
+                                    <Path x:Name="ScopeFill" Opacity="0.18"
+                                          Fill="{DynamicResource BrushAccentMid}">
+                                        <Path.OpacityMask>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Offset="0" Color="#FFFFFFFF" />
+                                                <GradientStop Offset="1" Color="#00FFFFFF" />
+                                            </LinearGradientBrush>
+                                        </Path.OpacityMask>
+                                    </Path>
+
+                                    <Path x:Name="ScopeTrace" StrokeThickness="1"
+                                          Stroke="{DynamicResource BrushAccentMid}"
+                                          StrokeLineJoin="Round" />
+
+                                    <Ellipse x:Name="ScopeDot" Width="6" Height="6"
+                                             Fill="{DynamicResource BrushAccentStart}" />
+                                </Canvas>
+
+                                <StackPanel Orientation="Horizontal" Margin="10,8,0,0"
+                                            HorizontalAlignment="Left" VerticalAlignment="Top"
+                                            IsHitTestVisible="False">
+                                    <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ПАКЕТОВ / С" />
+                                    <TextBlock Margin="8,0,0,0" FontSize="11"
+                                               FontFamily="{StaticResource FontUI}"
+                                               Foreground="{StaticResource BrushTextTertiary}"
+                                               Text="сетевой интерфейс" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Нижняя строка колодца: чип стратегии. -->
+                        <Button Grid.Row="5" Height="44" Padding="14,0" Cursor="Hand"
+                                FocusVisualStyle="{x:Null}"
+                                ctl:Fx.PressScale="True"
+                                Template="{StaticResource ChipRowTemplate}"
+                                Click="OnStrategyChipClick"
+                                ToolTip="{Binding SelectedStrategySummary}"
+                                AutomationProperties.Name="Открыть страницу стратегий">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Style="{StaticResource PageSubtitleStyle}"
+                                           Foreground="{StaticResource BrushTextTertiary}"
+                                           VerticalAlignment="Center" Text="Стратегия" />
+
+                                <TextBlock Grid.Column="1" Margin="16,0,10,0"
+                                           Style="{StaticResource CardTitleStyle}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding SelectedStrategyName}" />
+
+                                <Path Grid.Column="2" Width="10" Height="10"
+                                      Stretch="Uniform" Fill="{x:Null}"
+                                      Stroke="{StaticResource BrushTextTertiary}"
+                                      StrokeThickness="1.5" StrokeLineJoin="Round"
+                                      VerticalAlignment="Center"
+                                      Data="{StaticResource IconChevronRightStroke}" />
+                            </Grid>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- ===== Правая колонка =====
+                     В узком режиме code-behind вынимает Aside из этого ScrollViewer
+                     и кладёт под колодец: вложенная прокрутка съедала бы колесо мыши. -->
+                <ScrollViewer x:Name="AsideScroll" Grid.Column="2" Grid.Row="0"
+                              Style="{StaticResource ModernScrollViewerStyle}"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              PanningMode="VerticalOnly"
+                              VerticalAlignment="Top"
+                              SizeChanged="OnAsideScrollSizeChanged">
+                    <Grid x:Name="Aside">
+                        <Grid.RowDefinitions>
+                            <!-- 112 плитки + 16 отступа снизу (§8); лишнюю высоту забирают плитки. -->
+                            <RowDefinition Height="*" MinHeight="128" MaxHeight="192" />
+                            <RowDefinition Height="*" MinHeight="128" MaxHeight="192" />
+                            <RowDefinition Height="*" MinHeight="128" MaxHeight="192" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Плитка «ПРОЦЕСС» -->
+                        <Border Grid.Row="0" Style="{StaticResource TileStyle}" Margin="0,0,0,16"
+                                ctl:Fx.Reveal="True" ctl:Fx.RevealIndex="1" ctl:Fx.HoverLift="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Style="{StaticResource MicroLabelStyle}"
+                                           ctl:Fx.Tracking="110" Text="ПРОЦЕСС" />
+
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource TileNumericStyle}"
+                                               ctl:Fx.TickOnChange="True"
+                                               Text="{Binding Traffic.WinwsPidText}" />
+                                    <TextBlock Margin="8,0,0,0" FontSize="12"
+                                               FontFamily="{StaticResource FontUI}"
+                                               Foreground="{StaticResource BrushTextSecondary}"
+                                               VerticalAlignment="Bottom" Text="PID" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="2" Style="{StaticResource CaptionTextStyle}"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding Traffic.WinwsMemoryText}" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Плитка «ПАКЕТОВ / С» -->
+                        <Border Grid.Row="1" Style="{StaticResource TileStyle}" Margin="0,0,0,16"
+                                ctl:Fx.Reveal="True" ctl:Fx.RevealIndex="2" ctl:Fx.HoverLift="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ПАКЕТОВ / С" />
+
+                                <TextBlock Grid.Row="1" Style="{StaticResource TileNumericStyle}"
+                                           VerticalAlignment="Center"
+                                           ctl:Fx.TickOnChange="True"
+                                           Text="{Binding Traffic.PacketsText}" />
+
+                                <TextBlock Grid.Row="2" Style="{StaticResource CaptionTextStyle}"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding Traffic.SpeedText}" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Плитка «СЛУЖБА» -->
+                        <Border Grid.Row="2" Style="{StaticResource TileStyle}" Margin="0,0,0,16"
+                                ctl:Fx.Reveal="True" ctl:Fx.RevealIndex="3" ctl:Fx.HoverLift="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Style="{StaticResource MicroLabelStyle}"
+                                           ctl:Fx.Tracking="110" Text="СЛУЖБА" />
+
+                                <TextBlock Grid.Row="1" Style="{StaticResource SectionTitleStyle}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Text="{Binding ServiceStateText}" />
+
+                                <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                    <Ellipse Style="{StaticResource ServiceDotStyle}" />
+                                    <TextBlock Margin="10,0,0,0"
+                                               Style="{StaticResource CaptionTextStyle}"
+                                               Foreground="{StaticResource BrushTextTertiary}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="{Binding InstalledServiceStrategy, TargetNullValue=стратегия не задана}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Быстрые переключатели -->
+                        <Border Grid.Row="3" Style="{StaticResource CardStyle}" Padding="16,12"
+                                Margin="0,0,0,16"
+                                ctl:Fx.Reveal="True" ctl:Fx.RevealIndex="4">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Трекинг только на однословных подписях: между слов тонкий пробел
+                                     неотличим от обычного, и «БЫСТРЫЕ ПЕРЕКЛЮЧАТЕЛИ» слипается. -->
+                                <TextBlock Style="{StaticResource MicroLabelStyle}" Text="БЫСТРЫЕ ПЕРЕКЛЮЧАТЕЛИ" />
+
+                                <StackPanel Grid.Row="1" Margin="0,6,0,0">
+                                    <Grid Height="40">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource ToggleRowLabelStyle}" Text="Игровой фильтр" />
+                                        <ToggleButton x:Name="GameFilterToggle" Grid.Column="1"
+                                                      Style="{StaticResource ToggleSwitchStyle}"
+                                                      Margin="12,0,0,0"
+                                                      IsChecked="{Binding IsGameFilterOn, Mode=OneWay}"
+                                                      Checked="OnGameFilterChecked"
+                                                      Unchecked="OnGameFilterUnchecked"
+                                                      ToolTip="{Binding GameFilterText}"
+                                                      AutomationProperties.Name="Игровой фильтр" />
+                                    </Grid>
+
+                                    <Border Style="{StaticResource SeparatorStyle}" />
+
+                                    <Grid Height="40">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource ToggleRowLabelStyle}" Text="Проверять обновления" />
+                                        <ToggleButton Grid.Column="1"
+                                                      Style="{StaticResource ToggleSwitchStyle}"
+                                                      Margin="12,0,0,0"
+                                                      IsChecked="{Binding AutoUpdateCheck, Mode=TwoWay}"
+                                                      AutomationProperties.Name="Проверять обновления" />
+                                    </Grid>
+
+                                    <Border Style="{StaticResource SeparatorStyle}" />
+
+                                    <Grid Height="40">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource ToggleRowLabelStyle}" Text="Автозапуск обхода" />
+                                        <ToggleButton x:Name="AutoStartToggle" Grid.Column="1"
+                                                      Style="{StaticResource ToggleSwitchStyle}"
+                                                      Margin="12,0,0,0"
+                                                      Checked="OnAutoStartChecked"
+                                                      Unchecked="OnAutoStartUnchecked"
+                                                      AutomationProperties.Name="Автозапуск обхода" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <Button Grid.Row="2" Height="32" Margin="0,14,0,0"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        HorizontalAlignment="Stretch"
+                                        Content="Открыть журнал"
+                                        Click="OnOpenLogClick" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Проверка доступа -->
+                        <Border Grid.Row="4" Style="{StaticResource CardStyle}" Padding="16,14"
+                                ctl:Fx.Reveal="True" ctl:Fx.RevealIndex="5">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Style="{StaticResource MicroLabelStyle}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="ПРОВЕРКА ДОСТУПА" />
+
+                                    <Button Grid.Column="1" Height="26" Padding="10,0" Margin="12,0,0,0"
+                                            Style="{StaticResource GhostButtonStyle}"
+                                            FontSize="11.5"
+                                            Content="Проверить"
+                                            Command="{Binding RunProbesCommand}" />
+                                </Grid>
+
+                                <TextBlock Grid.Row="1" Margin="0,6,0,0"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Foreground="{StaticResource BrushTextTertiary}"
+                                           TextWrapping="Wrap"
+                                           Text="Проверяет, открываются ли сайты прямо сейчас" />
+
+                                <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                                    <TextBlock Style="{StaticResource ProbeEmptyStyle}"
+                                               TextWrapping="Wrap"
+                                               Text="Проверка ещё не выполнялась — нажмите «Проверить»." />
+
+                                    <ItemsControl ItemsSource="{Binding Probes}"
+                                                  ItemTemplate="{StaticResource ProbeRowTemplate}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

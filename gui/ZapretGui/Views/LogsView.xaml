@@ -1,0 +1,386 @@
+<UserControl x:Class="ZapretGui.Views.LogsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fx="clr-namespace:ZapretGui.Controls"
+             Background="{StaticResource BrushBgSunken}"
+             FontFamily="{StaticResource FontUI}"
+             FontSize="{StaticResource FontSizeBody}"
+             Foreground="{StaticResource BrushTextSecondary}"
+             SnapsToDevicePixels="True"
+             UseLayoutRounding="True">
+
+    <UserControl.Resources>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- ============ Строка журнала ============
+             тик 2 | 10 | время | 12 | сообщение; цвет тика и текста — по уровню -->
+        <DataTemplate x:Key="LogRowTemplate">
+            <Grid Height="20" ToolTip="{Binding Text}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border x:Name="Tick" Grid.Column="0"
+                        Width="2" Height="14"
+                        VerticalAlignment="Center"
+                        CornerRadius="{StaticResource Radius0}"
+                        Background="{DynamicResource BrushAccentDim}" />
+
+                <TextBlock x:Name="Stamp" Grid.Column="2"
+                           Text="{Binding Time, StringFormat={}{0:HH:mm:ss}}"
+                           FontFamily="{StaticResource FontMono}"
+                           FontSize="{StaticResource FontSizeInlineNumeric}"
+                           Foreground="{StaticResource BrushTextTertiary}"
+                           Typography.NumeralAlignment="Tabular"
+                           TextOptions.TextFormattingMode="Display"
+                           VerticalAlignment="Center" />
+
+                <TextBlock x:Name="Msg" Grid.Column="4"
+                           Text="{Binding Text}"
+                           FontFamily="{StaticResource FontMono}"
+                           FontSize="{StaticResource FontSizeInlineNumeric}"
+                           Foreground="{StaticResource BrushTextSecondary}"
+                           TextOptions.TextFormattingMode="Display"
+                           TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+            </Grid>
+
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="Success">
+                    <Setter TargetName="Tick" Property="Background" Value="{StaticResource BrushSuccess}" />
+                    <Setter TargetName="Msg" Property="Foreground" Value="{StaticResource BrushSuccess}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Warn">
+                    <Setter TargetName="Tick" Property="Background" Value="{StaticResource BrushWarning}" />
+                    <Setter TargetName="Msg" Property="Foreground" Value="{StaticResource BrushWarning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Error">
+                    <Setter TargetName="Tick" Property="Background" Value="{StaticResource BrushDanger}" />
+                    <Setter TargetName="Msg" Property="Foreground" Value="{StaticResource BrushDanger}" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- Контейнер строки: высота 20, радиус 0, ховер — BrushSurfaceHover.
+             Появление: Opacity 0→1 (LogLineAppend). FillBehavior=Stop, базовое значение 1,
+             поэтому по остановке раскадровки строка сама остаётся видимой. -->
+        <Style x:Key="LogRowStyle" TargetType="ListBoxItem">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="10,0,14,0" />
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Grid Background="Transparent">
+                            <Border x:Name="Hover"
+                                    CornerRadius="{StaticResource Radius0}"
+                                    Background="{StaticResource BrushSurfaceHover}"
+                                    Opacity="0" />
+                            <Border x:Name="Selected"
+                                    CornerRadius="{StaticResource Radius0}"
+                                    Background="{DynamicResource BrushAccentWash}"
+                                    Opacity="0" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"
+                                              SnapsToDevicePixels="True" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Hover" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Selected" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard FillBehavior="Stop">
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="0" To="1"
+                                                         Duration="0:0:0.16"
+                                                         EasingFunction="{StaticResource EaseOutCubic}" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <ItemsPanelTemplate x:Key="LogItemsPanel">
+            <VirtualizingStackPanel Orientation="Vertical"
+                                    VirtualizingStackPanel.IsVirtualizing="True"
+                                    VirtualizingStackPanel.VirtualizationMode="Recycling" />
+        </ItemsPanelTemplate>
+
+        <ControlTemplate x:Key="LogListTemplate" TargetType="ListBox">
+            <ScrollViewer x:Name="PART_ScrollHost"
+                          Style="{StaticResource ModernScrollViewerStyle}"
+                          CanContentScroll="True"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          PanningMode="VerticalOnly"
+                          Padding="0">
+                <ItemsPresenter SnapsToDevicePixels="True" />
+            </ScrollViewer>
+        </ControlTemplate>
+
+        <!-- Пилюля «К последним»: 132×28, радиус pill — в контракте кнопок такого нет. -->
+        <Style x:Key="JumpPillStyle" TargetType="Button">
+            <Setter Property="Width" Value="132" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="FontFamily" Value="{StaticResource FontUI}" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Base"
+                                    CornerRadius="{StaticResource RadiusPill}"
+                                    Background="{StaticResource BrushSurfaceOverlay}"
+                                    BorderThickness="1"
+                                    BorderBrush="{StaticResource BrushHairlineStrong}" />
+                            <Border x:Name="Hover"
+                                    CornerRadius="{StaticResource RadiusPill}"
+                                    Background="{StaticResource BrushSurfaceHover}"
+                                    Opacity="0" />
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="К последним"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           FontFamily="{TemplateBinding FontFamily}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           FontWeight="SemiBold"
+                                           TextOptions.TextFormattingMode="Display"
+                                           VerticalAlignment="Center" />
+                                <Path Data="{StaticResource IconChevronDownStroke}"
+                                      Width="12" Height="12"
+                                      Margin="6,1,0,0"
+                                      Stretch="Uniform"
+                                      Fill="{x:Null}"
+                                      Stroke="{TemplateBinding Foreground}"
+                                      StrokeThickness="1.5"
+                                      StrokeLineJoin="Round"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Hover" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Base" Property="Background" Value="{StaticResource BrushSurfacePressed}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </UserControl.Resources>
+
+    <!-- Без HorizontalAlignment: Center заставляет сетку сжаться до ширины содержимого,
+         а Stretch + MaxWidth отдаёт всю доступную ширину и сам центрирует. -->
+    <Grid MaxWidth="1320" Margin="32,24,32,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="32" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="*" MinHeight="120" />
+            <RowDefinition Height="32" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Шапка ============ -->
+        <!-- Чипы и поиск вынесены отдельной строкой: вместе с кнопками они не влезали
+             на узком окне и наезжали на заголовок. -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource PageTitleStyle}" Text="Журнал" />
+                <TextBlock Style="{StaticResource PageSubtitleStyle}" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           Text="{Binding UptimeText, StringFormat='winws.exe · сессия {0}'}" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                <Button Style="{StaticResource SecondaryButtonStyle}"
+                        Width="96" Height="32" Margin="0,0,8,0"
+                        Content="Очистить"
+                        Command="{Binding ClearLogCommand}" />
+                <Button x:Name="SaveButton"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="116" Height="32" Margin="0,0,8,0"
+                        Content="Сохранить…"
+                        Click="OnSaveClick" />
+                <Button x:Name="CopyButton"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="132" Height="32"
+                        Content="Копировать всё"
+                        Click="OnCopyAllClick" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ============ Фильтры ============ -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <RadioButton x:Name="ChipAll"
+                             Style="{StaticResource ChipToggleStyle}"
+                             GroupName="LogLevelFilter"
+                             Content="Всё" Tag="all"
+                             IsChecked="True"
+                             Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="LogLevelFilter"
+                             Content="Предупреждения" Tag="warn"
+                             Checked="OnChipChecked" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="LogLevelFilter"
+                             Content="Ошибки" Tag="error"
+                             Checked="OnChipChecked" />
+            </StackPanel>
+
+            <TextBox x:Name="Search" Grid.Column="1"
+                     Style="{StaticResource SearchBoxStyle}"
+                     Width="240" Height="32" Margin="16,0,0,0"
+                     HorizontalAlignment="Right" VerticalAlignment="Center"
+                     Tag="Поиск по строкам"
+                     TextChanged="OnSearchChanged" />
+        </Grid>
+
+        <!-- ============ Область журнала ============ -->
+        <Border Grid.Row="4"
+                CornerRadius="{StaticResource Radius8}"
+                Background="{StaticResource BrushBgSunken}"
+                BorderThickness="1"
+                BorderBrush="{StaticResource BrushHairlineWeak}"
+                Padding="0"
+                ClipToBounds="True"
+                RenderOptions.ClearTypeHint="Enabled">
+            <Grid>
+                <ListBox x:Name="List"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="0"
+                         SelectionMode="Extended"
+                         HorizontalContentAlignment="Stretch"
+                         ItemTemplate="{StaticResource LogRowTemplate}"
+                         ItemContainerStyle="{StaticResource LogRowStyle}"
+                         ItemsPanel="{StaticResource LogItemsPanel}"
+                         Template="{StaticResource LogListTemplate}"
+                         KeyDown="OnListKeyDown"
+                         ScrollViewer.CanContentScroll="True"
+                         ScrollViewer.PanningMode="VerticalOnly"
+                         VirtualizingStackPanel.IsVirtualizing="True"
+                         VirtualizingStackPanel.VirtualizationMode="Recycling"
+                         VirtualizingPanel.ScrollUnit="Pixel"
+                         fx:Fx.StickyScroll="{Binding IsChecked, ElementName=AutoScrollToggle}" />
+
+                <!-- ============ Пустое состояние ============ -->
+                <StackPanel x:Name="EmptyState"
+                            MaxWidth="320"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding IsEmpty, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                    <Path Width="48" Height="48" Stretch="Uniform"
+                          Data="{StaticResource IconJournalStroke}"
+                          Fill="{x:Null}"
+                          Stroke="{StaticResource BrushTextDisabled}"
+                          StrokeThickness="1.25"
+                          StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          HorizontalAlignment="Center" />
+                    <TextBlock x:Name="EmptyTitle"
+                               Margin="0,16,0,0"
+                               Text="Журнал пуст"
+                               FontFamily="{StaticResource FontUI}"
+                               FontSize="{StaticResource FontSizeSectionTitle}"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               TextAlignment="Center" />
+                    <TextBlock x:Name="EmptyHint"
+                               Margin="0,6,0,0"
+                               Text="Записи появятся после запуска обхода"
+                               FontFamily="{StaticResource FontUI}"
+                               FontSize="{StaticResource FontSizePageSubtitle}"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               LineHeight="18" LineStackingStrategy="BlockLineHeight"
+                               TextWrapping="Wrap" TextAlignment="Center" />
+                </StackPanel>
+
+                <!-- ============ «К последним» ============ -->
+                <Button x:Name="JumpPill"
+                        Style="{StaticResource JumpPillStyle}"
+                        HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                        Margin="0,0,0,14"
+                        Opacity="0"
+                        Visibility="Collapsed"
+                        Click="OnJumpClick">
+                    <Button.RenderTransform>
+                        <TranslateTransform x:Name="PillShift" Y="8" />
+                    </Button.RenderTransform>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- ============ Нижняя полоса, прижата к низу страницы ============ -->
+        <Border Grid.Row="5"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{StaticResource BrushHairlineWeak}">
+            <Grid Margin="4,0,4,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock VerticalAlignment="Center"
+                           Style="{StaticResource CaptionTextStyle}"
+                           Foreground="{StaticResource BrushTextTertiary}"
+                           Text="{Binding LineCountText, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource CaptionTextStyle}"
+                               Foreground="{StaticResource BrushTextTertiary}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Text="Автопрокрутка" />
+                    <ToggleButton x:Name="AutoScrollToggle"
+                                  Style="{StaticResource ToggleSwitchStyle}"
+                                  IsChecked="True"
+                                  Checked="OnAutoScrollChanged"
+                                  Unchecked="OnAutoScrollChanged" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
