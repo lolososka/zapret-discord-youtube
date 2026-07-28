@@ -268,7 +268,7 @@
                             <ToggleButton x:Name="AutoUpdateSwitch" DockPanel.Dock="Right"
                                           Style="{StaticResource ToggleSwitchStyle}"
                                           Checked="OnAutoUpdateToggled" Unchecked="OnAutoUpdateToggled" />
-                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Проверять обновления" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Обновлять служебные списки Flowseal" />
                         </DockPanel>
 
                         <Border Style="{StaticResource SeparatorStyle}" />
@@ -277,7 +277,7 @@
                             <ToggleButton x:Name="CheckUpdatesOnLaunchSwitch" DockPanel.Dock="Right"
                                           Style="{StaticResource ToggleSwitchStyle}"
                                           Checked="OnCheckUpdatesOnLaunchToggled" Unchecked="OnCheckUpdatesOnLaunchToggled" />
-                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Проверять обновления при запуске" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Проверять новую версию GUI при запуске" />
                         </DockPanel>
                     </StackPanel>
                 </Border>
@@ -361,7 +361,7 @@
                         <TextBlock Style="{StaticResource MicroLabelStyle}" Text="О ПРОГРАММЕ" />
 
                         <TextBlock Style="{StaticResource CardTitleStyle}" Margin="0,12,0,0"
-                                   Text="{Binding LocalVersion, StringFormat='Zapret Control Center · ядро {0}'}" />
+                                   Text="{Binding LocalVersion, StringFormat='Zapret Control Center · GUI {0}'}" />
 
                         <TextBlock Style="{StaticResource CaptionTextStyle}" Margin="0,6,0,0"
                                    TextWrapping="Wrap"
@@ -385,7 +385,7 @@
                                     Style="{StaticResource LinkButtonStyle}"
                                     Content="Страница релизов"
                                     Click="OnLinkClick" />
-                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Загрузка обновлений" />
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="Проверенные релизы community-форка" />
                         </DockPanel>
 
                         <Border Style="{StaticResource SeparatorStyle}" />

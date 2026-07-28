@@ -133,9 +133,12 @@ public static class ZapretServiceManager
             else
                 await StopAndDeleteAsync(ServiceName, log).ConfigureAwait(false);
 
-            var killed = ProcessUtil.KillAll("winws.exe");
-            if (killed > 0)
-                log.AppendLine($"Завершено процессов winws.exe: {killed}");
+            if (ProcessUtil.IsProcessRunning("winws.exe"))
+            {
+                log.AppendLine(
+                    "После остановки службы ещё работает сторонний winws.exe; " +
+                    "он оставлен без изменений.");
+            }
 
             if (await QueryAsync("WinDivert").ConfigureAwait(false) != ServiceState.NotInstalled)
                 await StopAndDeleteAsync("WinDivert", log).ConfigureAwait(false);

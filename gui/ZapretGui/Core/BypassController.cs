@@ -60,6 +60,15 @@ public sealed class BypassController
         get { lock (_gate) return _activeStrategy; }
     }
 
+    /// <summary>
+    /// Режим игрового фильтра, с которым был запущен текущий процесс. Нужен, чтобы
+    /// переключение стратегии могло восстановить прежнюю конфигурацию целиком.
+    /// </summary>
+    public GameFilterMode ActiveGameFilterMode
+    {
+        get { lock (_gate) return _lastMode; }
+    }
+
     public DateTime? StartedAt
     {
         get { lock (_gate) return _startedAt; }
@@ -85,9 +94,18 @@ public sealed class BypassController
     public event EventHandler<BypassState>? StateChanged;
     public event EventHandler<LogLine>? LogWritten;
 
+    /// <summary>
+    /// AppState routes crash recovery through the same operation gate as manual
+    /// switching and service changes.
+    /// </summary>
+    public Func<Strategy, GameFilterMode, Task>? AutoRestartRequested { get; set; }
+
     // ---------------------------------------------------------------- запуск
 
-    public async Task<bool> StartAsync(Strategy strategy, GameFilterMode mode)
+    public async Task<bool> StartAsync(
+        Strategy strategy,
+        GameFilterMode mode,
+        CancellationToken ct = default)
     {
         if (strategy is null)
         {
@@ -95,11 +113,30 @@ public sealed class BypassController
             return false;
         }
 
-        await _mutex.WaitAsync().ConfigureAwait(false);
+        await _mutex.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // повторный запуск = перезапуск: гасим всё, что уже работает
-            await StopCoreAsync(quiet: true).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+
+            // Повторный запуск гасит только процесс, созданный этим экземпляром GUI.
+            // Служебный/сторонний winws.exe нельзя завершать неявно.
+            await StopCoreAsync(quiet: true, ownedOnly: true).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+
+            if (ProcessUtil.IsProcessRunning("winws.exe"))
+            {
+                lock (_gate)
+                {
+                    _activeStrategy = null;
+                    _startedAt ??= DateTime.Now;
+                }
+                SetState(BypassState.Running);
+                Log(
+                    "Обнаружен winws.exe, запущенный службой или другой программой. " +
+                    "Запуск отменён: Zapret GUI не завершает чужие процессы.",
+                    LogLevel.Warn);
+                return false;
+            }
 
             lock (_gate)
             {
@@ -159,6 +196,7 @@ public sealed class BypassController
 
             _captureStartup = true;
             Log($"Запуск стратегии «{strategy.DisplayName}»…");
+            ct.ThrowIfCancellationRequested();
 
             try
             {
@@ -236,6 +274,12 @@ public sealed class BypassController
             Log($"Обход работает: «{strategy.DisplayName}»" + GameFilterSuffix(mode) + ".", LogLevel.Success);
             return true;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Log("Запуск обхода отменён.", LogLevel.Info);
+            await StopCoreAsync(quiet: true, ownedOnly: true).ConfigureAwait(false);
+            return false;
+        }
         catch (Exception ex)
         {
             Log("Непредвиденная ошибка запуска: " + ex.Message, LogLevel.Error);
@@ -261,6 +305,7 @@ public sealed class BypassController
     {
         lock (_gate)
         {
+            _activeStrategy = null;
             _startedAt = null;
         }
         SetState(BypassState.Failed);
@@ -272,7 +317,7 @@ public sealed class BypassController
     /// true — трогаем только свой дочерний процесс. Так закрывается приложение: winws.exe,
     /// поднятый службой zapret или сторонним лаунчером, переживает выход из GUI.
     /// </param>
-    public async Task StopAsync(bool ownedOnly = false)
+    public async Task StopAsync(bool ownedOnly = true)
     {
         // Явная остановка пользователем обнуляет счётчик автоперезапусков.
         lock (_gate) _restartAttempts = 0;
@@ -293,7 +338,7 @@ public sealed class BypassController
     }
 
     /// <summary>Вызывается только под _mutex. quiet=true — тихая зачистка перед новым запуском.</summary>
-    private async Task StopCoreAsync(bool quiet, bool ownedOnly = false)
+    private async Task StopCoreAsync(bool quiet, bool ownedOnly = true)
     {
         Process? proc;
         lock (_gate)
@@ -302,7 +347,7 @@ public sealed class BypassController
             _proc = null;   // снимаем «свой» процесс до kill, чтобы Exited не трактовал это как падение
         }
 
-        bool foreign = !ownedOnly && proc is null && ProcessUtil.IsProcessRunning("winws.exe");
+        bool foreign = proc is null && ProcessUtil.IsProcessRunning("winws.exe");
 
         if (proc is null && !foreign)
         {
@@ -312,6 +357,19 @@ public sealed class BypassController
                 _startedAt = null;
             }
             SetState(BypassState.Stopped);
+            return;
+        }
+
+        if (proc is null && foreign && ownedOnly)
+        {
+            lock (_gate)
+            {
+                _activeStrategy = null;
+                _startedAt ??= DateTime.Now;
+            }
+            SetState(BypassState.Running);
+            if (!quiet)
+                Log("Чужой или служебный winws.exe оставлен работающим.", LogLevel.Warn);
             return;
         }
 
@@ -334,15 +392,21 @@ public sealed class BypassController
         }
 
         int killed = ownedOnly ? 0 : ProcessUtil.KillAll("winws.exe");
+        bool unownedStillRunning = ownedOnly && ProcessUtil.IsProcessRunning("winws.exe");
 
         lock (_gate)
         {
             _activeStrategy = null;
-            _startedAt = null;
+            _startedAt = unownedStillRunning ? DateTime.Now : null;
         }
-        SetState(BypassState.Stopped);
+        SetState(unownedStillRunning ? BypassState.Running : BypassState.Stopped);
 
-        if (!quiet)
+        if (unownedStillRunning)
+        {
+            if (!quiet)
+                Log("Свой процесс остановлен; чужой или служебный winws.exe продолжает работать.", LogLevel.Warn);
+        }
+        else if (!quiet)
         {
             Log("Обход остановлен.", LogLevel.Success);
         }
@@ -370,6 +434,12 @@ public sealed class BypassController
         catch { }
         SafeDispose(proc);
     }
+
+    /// <summary>
+    /// Аварийный синхронный путь закрытия окна. Завершает только дочерний процесс,
+    /// созданный этим экземпляром GUI; служебный и сторонний winws.exe не затрагивает.
+    /// </summary>
+    public void KillOwnedProcessForExit() => KillOwnedProcess();
 
     // ---------------------------------------------------------------- синхронизация состояния
 
@@ -513,7 +583,15 @@ public sealed class BypassController
 
         if (State is BypassState.Running or BypassState.Starting) return;   // пользователь успел сам
 
-        await StartAsync(strategy, mode).ConfigureAwait(false);
+        var restart = AutoRestartRequested;
+        if (restart is null)
+        {
+            Log(
+                "Автоперезапуск отменён: координатор операций уже недоступен.",
+                LogLevel.Warn);
+            return;
+        }
+        await restart(strategy, mode).ConfigureAwait(false);
     }
 
     private static LogLevel Classify(string s)

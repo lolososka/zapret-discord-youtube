@@ -7,13 +7,14 @@ using System.Text;
 namespace ZapretGui.Core;
 
 /// <summary>
-/// Проверка обновлений оригинального zapret-discord-youtube и сервисные загрузки с GitHub.
+/// Сервисные загрузки Flowseal. Проверка версии GUI и установка portable-релиза
+/// изолированы в ForkUpdateService и всегда используют строгую проверку TLS.
 /// </summary>
 public static class UpdateService
 {
-    public const string LocalVersion = "1.10.0";
+    public const string LocalVersion = "1.11.0";
 
-    public const string DownloadUrl = "https://github.com/Flowseal/zapret-discord-youtube/releases/latest";
+    public const string DownloadUrl = ForkUpdateService.ReleasesUrl;
 
     private const string RawBase = "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/.service/";
 
@@ -26,10 +27,6 @@ public static class UpdateService
             AllowAutoRedirect = true,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
         };
-
-        // Сертификаты иногда не проходят проверку из-за DPI-подмены у провайдера,
-        // но мы всё равно проверяем только доступность узла, а не подлинность контента.
-        handler.ServerCertificateCustomValidationCallback = static (_, _, _, _) => true;
 
         HttpClient client;
         try
@@ -58,37 +55,19 @@ public static class UpdateService
         return client;
     }
 
-    /// <summary>Сравнивает локальную версию с версией в репозитории Flowseal.</summary>
+    /// <summary>Проверяет последний проверенный portable-релиз community-форка.</summary>
     public static async Task<(bool ok, string? remoteVersion, bool updateAvailable)> CheckAsync(CancellationToken ct = default)
     {
-        try
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(8));
-
-            var text = await GetStringAsync(RawBase + "version.txt", cts.Token).ConfigureAwait(false);
-            if (text is null)
-                return (false, null, false);
-
-            var remote = FirstMeaningfulLine(text);
-            if (string.IsNullOrEmpty(remote))
-                return (false, null, false);
-
-            return (true, remote, IsNewer(remote, LocalVersion));
-        }
-        catch
-        {
-            return (false, null, false);
-        }
+        var (ok, release, updateAvailable) =
+            await ForkUpdateService.CheckAsync(ct).ConfigureAwait(false);
+        var label = release is null
+            ? null
+            : $"{release.GuiVersion} · Flowseal {release.UpstreamVersion}";
+        return (ok, label, updateAvailable);
     }
 
     public static string ReleasePageUrl(string version)
-    {
-        var v = (version ?? string.Empty).Trim();
-        if (v.Length == 0)
-            return DownloadUrl;
-        return "https://github.com/Flowseal/zapret-discord-youtube/releases/tag/" + Uri.EscapeDataString(v);
-    }
+        => DownloadUrl;
 
     /// <summary>Скачивает актуальный ipset-all.txt из репозитория.</summary>
     public static async Task<CommandResult> UpdateIpsetAsync(CancellationToken ct = default)

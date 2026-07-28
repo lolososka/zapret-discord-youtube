@@ -161,6 +161,7 @@ $exeName = 'ZapretGUI.exe'
 $checksumsName = 'SHA256SUMS.txt'
 $notesName = 'RELEASE_NOTES.md'
 $metadataName = 'release-metadata.json'
+$updateManifestName = 'UPDATE_MANIFEST.json'
 
 $zipPath = Join-Path $OutputDir $zipName
 $releaseExePath = Join-Path $OutputDir $exeName
@@ -277,6 +278,40 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
         throw "User-specific files entered the release: $($forbiddenFiles.FullName -join ', ')"
     }
 
+    # Манифест находится внутри уже проверяемого ZIP и перечисляет каждый
+    # управляемый файл. Клиент сверяет его после безопасной распаковки, прежде
+    # чем side-by-side helper заменит portable-папку.
+    $managedFiles = @(
+        Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
+            Sort-Object -Property FullName
+    )
+    $managedEntries = @(
+        foreach ($file in $managedFiles) {
+            [ordered]@{
+                Path = Get-RelativePath `
+                    -BasePath $packageRoot `
+                    -Path $file.FullName
+                Size = [long]$file.Length
+                Sha256 = (
+                    Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256
+                ).Hash.ToLowerInvariant()
+            }
+        }
+    )
+    $updateManifest = [ordered]@{
+        SchemaVersion = 1
+        Tag = $tag
+        GuiVersion = $GuiVersion
+        UpstreamVersion = $UpstreamVersion
+        UpstreamCommit = $UpstreamCommit
+        ForkCommit = $ForkCommit
+        PackageRoot = $packageRootName
+        Files = $managedEntries
+    }
+    Write-Utf8NoBom `
+        -Path (Join-Path $packageRoot $updateManifestName) `
+        -Value (($updateManifest | ConvertTo-Json -Depth 6) + "`n")
+
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -286,6 +321,9 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
     )
     if ($sourceFiles.Count -eq 0) {
         throw 'The portable package is empty.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $updateManifestName) -PathType Leaf)) {
+        throw "Portable update manifest is missing: $updateManifestName"
     }
 
     $sourceManifest = @{}
@@ -410,6 +448,12 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
 В архив уже входят GUI, Flowseal-стратегии, `bin`, `lists`, `utils` и `service.bat`.
 Отдельный `ZapretGUI.exe` предназначен для ручного обновления уже существующей папки.
 Контрольные суммы находятся в `__CHECKSUMS_NAME__`.
+
+### Возможности Zapret Control Center
+
+- Проверенное обновление portable-сборки с резервной копией и автоматическим откатом.
+- Переключение работающей стратегии без ручной остановки; неудачный профиль откатывается.
+- Защита несохранённых пользовательских списков при закрытии редактора.
 
 ### Состав сборки
 

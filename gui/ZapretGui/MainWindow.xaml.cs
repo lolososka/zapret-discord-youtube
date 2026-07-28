@@ -39,6 +39,7 @@ public partial class MainWindow : System.Windows.Window
     private bool _reallyExit;
     private bool _closingInProgress;
     private bool _shutdownDone;
+    private bool _preparedExitApproved;
 
     public MainWindow()
     {
@@ -90,6 +91,24 @@ public partial class MainWindow : System.Windows.Window
 
         ShowPage(index);
     }
+
+    /// <summary>Закрывает приложение по-настоящему после запуска внешнего update-helper.</summary>
+    public void ExitForPreparedUpdate()
+    {
+        _reallyExit = true;
+        Close();
+    }
+
+    public bool TryApprovePreparedExit()
+    {
+        if (!ConfirmUnsavedUserLists())
+            return false;
+        _preparedExitApproved = true;
+        return true;
+    }
+
+    public void CancelPreparedExitApproval() =>
+        _preparedExitApproved = false;
 
     // ──────────────────────────────────────────────────────── жизненный цикл
 
@@ -151,15 +170,20 @@ public partial class MainWindow : System.Windows.Window
         if (_startHidden)
             HideToTray(silent: true);
 
+        var initializedSuccessfully = false;
         try
         {
             await AppState.Instance.InitializeAsync();
+            initializedSuccessfully = true;
         }
         catch (Exception ex)
         {
             App.WriteCrashLog(ex, fatal: false);
             AppState.Instance.Notify("Инициализация завершилась с ошибкой — откройте журнал", ToastKind.Error);
         }
+
+        if (initializedSuccessfully)
+            App.MarkPendingUpdateHealthy();
 
         PushTrayState();
         UpdateStatusPulse();
@@ -179,6 +203,9 @@ public partial class MainWindow : System.Windows.Window
         }
 
         if (_closingInProgress)
+            return;
+
+        if (!_preparedExitApproved && !ConfirmUnsavedUserLists())
             return;
         _closingInProgress = true;
 
@@ -207,6 +234,14 @@ public partial class MainWindow : System.Windows.Window
 
         _shutdownDone = true;
         Close();
+    }
+
+    private bool ConfirmUnsavedUserLists()
+    {
+        if (!_pages.TryGetValue("strategies", out var page) ||
+            page is not StrategiesView strategies)
+            return true;
+        return strategies.ConfirmDiscardUserListChanges();
     }
 
     private void OnWindowClosed(object? sender, EventArgs e)
@@ -410,10 +445,7 @@ public partial class MainWindow : System.Windows.Window
     {
         try
         {
-            if (BypassController.Instance.ActiveStrategy is null)
-                return;
-
-            ProcessUtil.KillAll("winws.exe");
+            BypassController.Instance.KillOwnedProcessForExit();
         }
         catch (Exception ex)
         {

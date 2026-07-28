@@ -9,12 +9,69 @@ namespace ZapretGui;
 public partial class App : Application
 {
     private static Mutex? _instanceMutex;
+    private static string? _pendingPostUpdatePlan;
+    private static string? _pendingPostUpdatePlanSha256;
 
     /// <summary>Приложение запущено с ключом --minimized (автозапуск с Windows).</summary>
     public static bool StartMinimizedRequested { get; private set; }
+    public static bool PostUpdateHealthCheckRequested { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (PortableUpdateInstaller.IsHelperInvocation(e.Args))
+        {
+            base.OnStartup(e);
+            var exitCode = PortableUpdateInstaller.RunHelper(
+                e.Args[1],
+                e.Args[2]);
+            Shutdown(exitCode);
+            return;
+        }
+
+        if (PortableUpdateInstaller.TryGetPostUpdatePlan(
+                e.Args,
+                out var postUpdatePlan,
+                out var postUpdatePlanSha256))
+        {
+            if (!string.IsNullOrWhiteSpace(postUpdatePlan) &&
+                !string.IsNullOrWhiteSpace(postUpdatePlanSha256) &&
+                PortableUpdateInstaller.IsTrustedPostUpdateInvocation(
+                    postUpdatePlan,
+                    postUpdatePlanSha256))
+            {
+                _pendingPostUpdatePlan = postUpdatePlan;
+                _pendingPostUpdatePlanSha256 = postUpdatePlanSha256;
+                PostUpdateHealthCheckRequested = true;
+            }
+        }
+
+        var trustedRollback =
+            PortableUpdateInstaller.TryGetRollbackPlan(
+                e.Args,
+                out var rollbackPlan,
+                out var rollbackPlanSha256) &&
+            !string.IsNullOrWhiteSpace(rollbackPlan) &&
+            !string.IsNullOrWhiteSpace(rollbackPlanSha256) &&
+            PortableUpdateInstaller.IsTrustedRollbackInvocation(
+                rollbackPlan,
+                rollbackPlanSha256);
+        var trustedUpdateChild =
+            PostUpdateHealthCheckRequested || trustedRollback;
+
+        if (!trustedUpdateChild &&
+            PortableUpdateInstaller.IsApplyInProgress())
+        {
+            base.OnStartup(e);
+            MessageBox.Show(
+                "Сейчас устанавливается проверенное обновление. " +
+                "Новое окно откроется автоматически после завершения.",
+                "Zapret Control Center — обновление",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown(0);
+            return;
+        }
+
         StartMinimizedRequested = e.Args.Any(a =>
             a.Equals("--minimized", StringComparison.OrdinalIgnoreCase) ||
             a.Equals("/minimized", StringComparison.OrdinalIgnoreCase));
@@ -51,6 +108,23 @@ public partial class App : Application
         // App.xaml не задаёт StartupUri и менять его нельзя — окно поднимаем отсюда.
         var window = new ZapretGui.MainWindow();
         window.Show();
+    }
+
+    /// <summary>
+    /// Вызывается только после успешной инициализации главного окна. Helper ждёт этот
+    /// marker и автоматически откатывает portable-папку, если новая версия не поднялась.
+    /// </summary>
+    internal static void MarkPendingUpdateHealthy()
+    {
+        var planPath = Interlocked.Exchange(
+            ref _pendingPostUpdatePlan,
+            null);
+        var planSha256 = Interlocked.Exchange(
+            ref _pendingPostUpdatePlanSha256,
+            null);
+        if (!string.IsNullOrWhiteSpace(planPath) &&
+            !string.IsNullOrWhiteSpace(planSha256))
+            PortableUpdateInstaller.MarkHealthy(planPath, planSha256);
     }
 
     protected override void OnExit(ExitEventArgs e)

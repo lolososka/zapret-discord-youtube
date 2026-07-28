@@ -92,6 +92,22 @@ public static class AppPaths
     public static string LogFile => Path.Combine(DataDir, "zapret-gui.log");
 
     /// <summary>
+    /// Защищённая папка временного обновления в корне того же тома, что и portable-установка.
+    /// Такое расположение позволяет атомарно заменить каталог даже при установке не на диске C:.
+    /// </summary>
+    public static string UpdatesDir
+    {
+        get
+        {
+            var volumeRoot = Path.GetPathRoot(Root);
+            if (string.IsNullOrWhiteSpace(volumeRoot))
+                throw new InvalidOperationException(
+                    "Не удалось определить том portable-установки.");
+            return Path.Combine(volumeRoot, ".ZapretGUI-Updates");
+        }
+    }
+
+    /// <summary>
     /// Создаёт пользовательские списки, если их нет. Пустой list-general-user.txt
     /// ломает winws.exe, поэтому в файлы всегда пишется заглушка.
     /// </summary>

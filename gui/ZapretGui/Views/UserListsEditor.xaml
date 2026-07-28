@@ -69,13 +69,15 @@
                                  IsChecked="True"
                                  Checked="OnKindChecked"
                                  ToolTip="Домены, для которых нужно включить обход" />
-                    <RadioButton Style="{StaticResource ChipToggleStyle}"
+                    <RadioButton x:Name="ExcludedDomainsTab"
+                                 Style="{StaticResource ChipToggleStyle}"
                                  GroupName="UserListKind"
                                  Tag="ExcludedDomains"
                                  Content="Не обходить"
                                  Checked="OnKindChecked"
                                  ToolTip="Домены, которые winws не должен трогать" />
-                    <RadioButton Style="{StaticResource ChipToggleStyle}"
+                    <RadioButton x:Name="ExcludedIpsTab"
+                                 Style="{StaticResource ChipToggleStyle}"
                                  GroupName="UserListKind"
                                  Tag="ExcludedIps"
                                  Content="Исключить IP"
@@ -107,6 +109,7 @@
                              VerticalContentAlignment="Top"
                              VerticalScrollBarVisibility="Auto"
                              KeyDown="OnNewEntriesKeyDown"
+                             TextChanged="OnNewEntriesTextChanged"
                              AutomationProperties.Name="Новые значения" />
 
                     <Button Grid.Column="1"
@@ -150,6 +153,7 @@
                                                          Height="32"
                                                          Style="{StaticResource ModernTextBoxStyle}"
                                                          Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         TextChanged="OnEntryTextChanged"
                                                          AutomationProperties.Name="Значение списка" />
 
                                                 <Button Grid.Column="1"
@@ -222,11 +226,36 @@
 
                 <!-- Действия -->
                 <Grid Grid.Row="6" Margin="0,16,0,0">
-                    <Button HorizontalAlignment="Left"
-                            Height="34"
-                            Style="{StaticResource GhostButtonStyle}"
-                            Content="Открыть папку списков"
-                            Click="OnOpenFolderClick" />
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left">
+                        <Button Height="34"
+                                Style="{StaticResource GhostButtonStyle}"
+                                Content="Открыть папку списков"
+                                Click="OnOpenFolderClick" />
+
+                        <Border x:Name="DirtyIndicator"
+                                Height="26"
+                                Margin="12,0,0,0"
+                                Padding="10,0"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource BrushAccentWash}"
+                                BorderBrush="{DynamicResource BrushAccentDim}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource RadiusPill}"
+                                Visibility="Collapsed"
+                                AutomationProperties.Name="Есть несохранённые изменения">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="6" Height="6"
+                                         VerticalAlignment="Center"
+                                         Fill="{DynamicResource BrushAccentMid}" />
+                                <TextBlock Margin="7,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource CaptionTextStyle}"
+                                           Foreground="{StaticResource BrushTextPrimary}"
+                                           Text="Не сохранено" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
 
                     <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Right">
@@ -234,7 +263,8 @@
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 Content="Отмена"
                                 Click="OnCloseClick" />
-                        <Button Width="112" Height="34"
+                        <Button x:Name="SaveButton"
+                                Width="112" Height="34"
                                 Margin="10,0,0,0"
                                 Style="{StaticResource PrimaryButtonStyle}"
                                 Content="Сохранить"

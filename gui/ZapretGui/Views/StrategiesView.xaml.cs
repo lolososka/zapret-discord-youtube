@@ -226,26 +226,15 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
         if (sender is not ListBoxItem { DataContext: Strategy s }) return;
 
         _state.SelectedStrategy = s;
-        StartIfIdle();
+        ApplySelectedStrategy();
         e.Handled = true;
-    }
-
-    private void OnApplyClick(object sender, RoutedEventArgs e)
-    {
-        if (List.SelectedItem is Strategy s)
-            _state.SelectedStrategy = s;
-
-        if (_state.SelectedStrategy is null)
-        {
-            _state.Notify("Сначала выберите стратегию", ToastKind.Warning);
-            return;
-        }
-
-        StartIfIdle();
     }
 
     private void OnUserListsClick(object sender, RoutedEventArgs e)
         => UserListsEditor.Open();
+
+    public bool ConfirmDiscardUserListChanges() =>
+        UserListsEditor.ConfirmDiscardForApplicationExit();
 
     // ---------- Избранное и автоподбор ----------
 
@@ -273,19 +262,14 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
 
         _state.SelectedStrategy = best.Strategy;
         List.ScrollIntoView(best.Strategy);
-        StartIfIdle();
+        ApplySelectedStrategy();
     }
 
-    private void StartIfIdle()
+    private void ApplySelectedStrategy()
     {
-        if (_state.IsRunning)
-        {
-            _state.Notify("Обход уже запущен — остановите его, чтобы применить другую стратегию", ToastKind.Warning);
-            return;
-        }
-
-        if (_state.ToggleBypassCommand.CanExecute(null))
-            _state.ToggleBypassCommand.Execute(null);
+        var command = _state.ApplySelectedStrategyCommand;
+        if (command.CanExecute(null))
+            command.Execute(null);
     }
 
     // ---------- Модалка «Подробнее» ----------

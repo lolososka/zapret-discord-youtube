@@ -19,7 +19,13 @@ public sealed class AppState : ObservableObject
     private readonly DispatcherTimer _ticker;
     private readonly BypassController _bypass = BypassController.Instance;
     private readonly StrategyPreferences _prefs = StrategyPreferences.Load();
+    private readonly SemaphoreSlim _bypassOperationGate = new(1, 1);
+    private readonly CancellationTokenSource _shutdownCancellation = new();
+    private readonly object _shutdownSync = new();
     private int _slowTick;
+    private bool _isBypassOperationActive;
+    private bool _isShuttingDown;
+    private Task? _shutdownTask;
 
     // «Работала у вас» ставится один раз за запуск — иначе тост повторялся бы каждую секунду.
     private string? _markedThisRun;
@@ -32,9 +38,18 @@ public sealed class AppState : ObservableObject
         Diagnostics = new ObservableCollection<CheckResult>();
         Probes = new ObservableCollection<ProbeResult>();
 
-        ToggleBypassCommand = new AsyncRelayCommand(ToggleBypassAsync, () => SelectedStrategy is not null);
-        InstallServiceCommand = new AsyncRelayCommand(InstallServiceAsync, () => SelectedStrategy is not null);
-        RemoveServiceCommand = new AsyncRelayCommand(RemoveServiceAsync);
+        ToggleBypassCommand = new AsyncRelayCommand(
+            () => RunBypassOperationAsync(ToggleBypassAsync),
+            () => CanStartBypassOperation && (IsRunning || SelectedStrategy is not null));
+        ApplySelectedStrategyCommand = new AsyncRelayCommand(
+            () => RunBypassOperationAsync(ApplySelectedStrategyAsync),
+            () => CanApplySelectedStrategy);
+        InstallServiceCommand = new AsyncRelayCommand(
+            () => RunBypassOperationAsync(InstallServiceAsync),
+            () => CanStartBypassOperation && SelectedStrategy is not null);
+        RemoveServiceCommand = new AsyncRelayCommand(
+            () => RunBypassOperationAsync(RemoveServiceAsync),
+            () => CanStartBypassOperation);
         RunDiagnosticsCommand = new AsyncRelayCommand(RunDiagnosticsAsync);
         RunProbesCommand = new AsyncRelayCommand(RunProbesAsync);
         UpdateIpsetCommand = new AsyncRelayCommand(UpdateIpsetAsync);
@@ -43,18 +58,22 @@ public sealed class AppState : ObservableObject
         ClearLogCommand = new RelayCommand(() => { Log.Clear(); Raise(nameof(HasLog)); });
         OpenFolderCommand = new RelayCommand(() => OpenExternal(AppPaths.Root));
 
-        AutoPickCommand = new AsyncRelayCommand(AutoPickAsync, () => !Tester.IsRunning && Strategies.Count > 0);
+        AutoPickCommand = new AsyncRelayCommand(
+            () => RunBypassOperationAsync(AutoPickAsync),
+            () => CanStartBypassOperation && !Tester.IsRunning && Strategies.Count > 0);
         CancelAutoPickCommand = new RelayCommand(() => Tester.Cancel(), () => Tester.IsRunning);
 
         Tester.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(StrategyTester.IsRunning)) return;
-            AutoPickCommand.RaiseCanExecuteChanged();
             CancelAutoPickCommand.RaiseCanExecuteChanged();
+            RaiseBypassOperationCanExecuteChanged();
+            RaiseMany(nameof(CanApplySelectedStrategy), nameof(StrategyActionText), nameof(StrategyActionHint));
         };
 
         _bypass.StateChanged += (_, _) => OnBypassStateChanged();
         _bypass.LogWritten += (_, line) => AppendLog(line);
+        _bypass.AutoRestartRequested = QueueAutoRestartAsync;
 
         _ticker = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _ticker.Tick += OnTick;
@@ -83,20 +102,84 @@ public sealed class AppState : ObservableObject
             if (!Set(ref _selectedStrategy, value)) return;
             AppSettings.Current.LastStrategy = value?.Name;
             AppSettings.Save();
-            RaiseMany(nameof(SelectedStrategyName), nameof(SelectedStrategySummary));
-            ToggleBypassCommand.RaiseCanExecuteChanged();
-            InstallServiceCommand.RaiseCanExecuteChanged();
+            RaiseMany(nameof(SelectedStrategyName), nameof(SelectedStrategySummary),
+                      nameof(IsSelectedStrategyActive), nameof(CanApplySelectedStrategy),
+                      nameof(StrategyActionText), nameof(StrategyActionHint));
+            RaiseBypassOperationCanExecuteChanged();
         }
     }
 
     public string SelectedStrategyName => SelectedStrategy?.DisplayName ?? "Стратегия не выбрана";
     public string SelectedStrategySummary => SelectedStrategy?.Summary ?? "Откройте «Стратегии» и выберите вариант обхода";
 
+    /// <summary>Выбрана именно та конфигурация, которой сейчас владеет GUI.</summary>
+    public bool IsSelectedStrategyActive =>
+        IsRunning
+        && SameStrategy(SelectedStrategy, _bypass.ActiveStrategy)
+        && GameFilter == _bypass.ActiveGameFilterMode;
+
+    public bool CanApplySelectedStrategy =>
+        SelectedStrategy is not null
+        && CanStartBypassOperation
+        && !IsApplyingStrategy
+        && !IsBusy
+        && !Tester.IsRunning
+        && !IsSelectedStrategyActive
+        && !(IsRunning && _bypass.ActiveStrategy is null);
+
+    public string StrategyActionText
+    {
+        get
+        {
+            if (IsApplyingStrategy) return "Применяем…";
+            if (_isBypassOperationActive) return "Другая операция…";
+            if (_isShuttingDown) return "Завершение…";
+            if (IsRunning && _bypass.ActiveStrategy is null) return "Служба активна";
+            if (IsSelectedStrategyActive) return "Уже запущена";
+            if (IsRunning && SameStrategy(SelectedStrategy, _bypass.ActiveStrategy))
+                return "Перезапустить";
+            return IsRunning ? "Переключить" : "Запустить";
+        }
+    }
+
+    public string StrategyActionHint
+    {
+        get
+        {
+            if (IsApplyingStrategy) return "Дождитесь завершения переключения";
+            if (_isBypassOperationActive) return "Дождитесь завершения текущей операции с обходом";
+            if (_isShuttingDown) return "Приложение завершает работу";
+            if (IsRunning && _bypass.ActiveStrategy is null)
+                return "Обход запущен службой или другой программой — смените профиль через управление службой";
+            if (IsSelectedStrategyActive) return "Эта стратегия уже используется";
+            if (IsRunning && SameStrategy(SelectedStrategy, _bypass.ActiveStrategy))
+                return "Перезапустить эту стратегию с новым режимом игрового фильтра; при ошибке прежний режим будет восстановлен";
+            if (IsRunning)
+                return "Перезапустить обход с выбранной стратегией; при ошибке прежняя будет восстановлена";
+            return "Запустить обход с выбранной стратегией";
+        }
+    }
+
     // ---------- Состояние обхода ----------
 
     public BypassState BypassState => _bypass.State;
     public bool IsRunning => _bypass.State is BypassState.Running;
     public bool IsBusy => _bypass.State is BypassState.Starting or BypassState.Stopping;
+
+    private bool CanStartBypassOperation =>
+        !_isBypassOperationActive && !_isShuttingDown;
+
+    private bool _isApplyingStrategy;
+    public bool IsApplyingStrategy
+    {
+        get => _isApplyingStrategy;
+        private set
+        {
+            if (!Set(ref _isApplyingStrategy, value)) return;
+            RaiseMany(nameof(CanApplySelectedStrategy), nameof(StrategyActionText), nameof(StrategyActionHint));
+            ApplySelectedStrategyCommand.RaiseCanExecuteChanged();
+        }
+    }
 
     public string StatusTitle => _bypass.State switch
     {
@@ -136,7 +219,14 @@ public sealed class AppState : ObservableObject
     public ServiceState ServiceState
     {
         get => _serviceState;
-        private set { if (Set(ref _serviceState, value)) RaiseMany(nameof(ServiceStateText), nameof(IsServiceInstalled)); }
+        private set
+        {
+            if (!Set(ref _serviceState, value)) return;
+            RaiseMany(nameof(ServiceStateText), nameof(IsServiceInstalled),
+                      nameof(CanApplySelectedStrategy), nameof(StrategyActionText),
+                      nameof(StrategyActionHint));
+            RaiseBypassOperationCanExecuteChanged();
+        }
     }
 
     public bool IsServiceInstalled => ServiceState != ServiceState.NotInstalled;
@@ -165,7 +255,10 @@ public sealed class AppState : ObservableObject
         {
             if (!Set(ref _gameFilter, value)) return;
             FeatureFlags.SetGameFilter(value);
-            RaiseMany(nameof(GameFilterText), nameof(IsGameFilterOn));
+            RaiseMany(nameof(GameFilterText), nameof(IsGameFilterOn),
+                      nameof(IsSelectedStrategyActive), nameof(CanApplySelectedStrategy),
+                      nameof(StrategyActionText), nameof(StrategyActionHint));
+            RaiseBypassOperationCanExecuteChanged();
             if (IsRunning) Notify("Игровой фильтр изменён — перезапустите обход", ToastKind.Warning);
         }
     }
@@ -235,6 +328,7 @@ public sealed class AppState : ObservableObject
     // ---------- Команды ----------
 
     public AsyncRelayCommand ToggleBypassCommand { get; }
+    public AsyncRelayCommand ApplySelectedStrategyCommand { get; }
     public AsyncRelayCommand InstallServiceCommand { get; }
     public AsyncRelayCommand RemoveServiceCommand { get; }
     public AsyncRelayCommand RunDiagnosticsCommand { get; }
@@ -248,6 +342,57 @@ public sealed class AppState : ObservableObject
     /// <summary>Перебирает все стратегии и оставляет лучшую в Tester.Best.</summary>
     public AsyncRelayCommand AutoPickCommand { get; }
     public RelayCommand CancelAutoPickCommand { get; }
+
+    /// <summary>
+    /// Все операции, которые могут запускать/останавливать winws.exe или менять службу,
+    /// проходят через один gate. Отдельной сериализации внутри AsyncRelayCommand недостаточно:
+    /// разные команды иначе могли вклиниться между неудачным запуском и откатом.
+    /// </summary>
+    private async Task RunBypassOperationAsync(Func<CancellationToken, Task> operation)
+    {
+        if (operation is null || _isShuttingDown) return;
+
+        await _bypassOperationGate.WaitAsync();
+        try
+        {
+            if (_isShuttingDown) return;
+
+            SetBypassOperationActive(true);
+            try
+            {
+                await operation(_shutdownCancellation.Token);
+            }
+            catch (OperationCanceledException) when (_shutdownCancellation.IsCancellationRequested)
+            {
+                // Shutdown ждёт gate и сам выполняет последнюю owned-only остановку.
+            }
+            finally
+            {
+                SetBypassOperationActive(false);
+            }
+        }
+        finally
+        {
+            _bypassOperationGate.Release();
+        }
+    }
+
+    private void SetBypassOperationActive(bool active)
+    {
+        if (_isBypassOperationActive == active) return;
+        _isBypassOperationActive = active;
+        RaiseMany(nameof(CanApplySelectedStrategy), nameof(StrategyActionText), nameof(StrategyActionHint));
+        RaiseBypassOperationCanExecuteChanged();
+    }
+
+    private void RaiseBypassOperationCanExecuteChanged()
+    {
+        ToggleBypassCommand.RaiseCanExecuteChanged();
+        ApplySelectedStrategyCommand.RaiseCanExecuteChanged();
+        InstallServiceCommand.RaiseCanExecuteChanged();
+        RemoveServiceCommand.RaiseCanExecuteChanged();
+        AutoPickCommand.RaiseCanExecuteChanged();
+    }
 
     // ---------- Избранное и «работала у вас» ----------
 
@@ -320,15 +465,13 @@ public sealed class AppState : ObservableObject
         Notify($"«{active.DisplayName}» работает больше минуты — отмечена как рабочая", ToastKind.Success);
     }
 
-    private async Task AutoPickAsync()
+    private async Task AutoPickAsync(CancellationToken ct)
     {
         if (Tester.IsRunning) return;
 
-        if (ServiceState is ServiceState.Running)
-        {
-            Notify("Сначала удалите службу — она держит winws.exe", ToastKind.Warning);
+        _bypass.RefreshState();
+        if (!await EnsureManualStartAllowedAsync(ct))
             return;
-        }
 
         if (Strategies.Count == 0)
         {
@@ -338,7 +481,8 @@ public sealed class AppState : ObservableObject
 
         Notify("Перебор начат: обход будет перезапускаться на каждой стратегии", ToastKind.Info);
 
-        await Tester.RunAsync(Strategies.ToList(), GameFilter, CancellationToken.None);
+        await Tester.RunAsync(Strategies.ToList(), GameFilter, ct);
+        if (ct.IsCancellationRequested || _isShuttingDown) return;
 
         var best = Tester.Best;
         if (best is null)
@@ -377,8 +521,11 @@ public sealed class AppState : ObservableObject
 
         await RefreshServiceStateAsync();
 
-        if (AppSettings.Current.AutoStartBypass && !IsRunning && SelectedStrategy is not null)
-            await ToggleBypassAsync();
+        if (AppSettings.Current.AutoStartBypass &&
+            !App.PostUpdateHealthCheckRequested &&
+            !IsRunning &&
+            SelectedStrategy is not null)
+            await RunBypassOperationAsync(ToggleBypassAsync);
 
         if (AppSettings.Current.CheckUpdatesOnLaunch)
             _ = CheckUpdatesAsync(silent: true);
@@ -401,26 +548,47 @@ public sealed class AppState : ObservableObject
                    ?? list.FirstOrDefault();
 
         _selectedStrategy = pick;
-        RaiseMany(nameof(SelectedStrategy), nameof(SelectedStrategyName), nameof(SelectedStrategySummary));
-        AutoPickCommand.RaiseCanExecuteChanged();
-        ToggleBypassCommand.RaiseCanExecuteChanged();
-        InstallServiceCommand.RaiseCanExecuteChanged();
+        RaiseMany(nameof(SelectedStrategy), nameof(SelectedStrategyName), nameof(SelectedStrategySummary),
+                  nameof(IsSelectedStrategyActive), nameof(CanApplySelectedStrategy),
+                  nameof(StrategyActionText), nameof(StrategyActionHint));
+        RaiseBypassOperationCanExecuteChanged();
     }
 
-    public async Task ShutdownAsync()
+    public Task ShutdownAsync()
     {
+        lock (_shutdownSync)
+            return _shutdownTask ??= ShutdownCoreAsync();
+    }
+
+    private async Task ShutdownCoreAsync()
+    {
+        _isShuttingDown = true;
+        _shutdownCancellation.Cancel();
         _ticker.Stop();
         Traffic.Stop();
         Tester.Cancel();
+        RaiseMany(nameof(CanApplySelectedStrategy), nameof(StrategyActionText), nameof(StrategyActionHint));
+        RaiseBypassOperationCanExecuteChanged();
 
-        if (_prefsDirty)
+        // Текущая операция удерживает gate до полного завершения. После отмены
+        // автоподбор остановится, а Apply не начнёт fallback.
+        await _bypassOperationGate.WaitAsync();
+        try
         {
-            _prefsDirty = false;
-            _prefs.Save();
-        }
+            if (_prefsDirty)
+            {
+                _prefsDirty = false;
+                _prefs.Save();
+            }
 
-        // Только свой процесс: обход, установленный как служба, должен пережить закрытие окна.
-        await _bypass.StopAsync(ownedOnly: true);
+            // Финальная остановка выполняется под тем же gate: после неё новый
+            // принадлежащий GUI процесс уже не сможет появиться.
+            await _bypass.StopAsync(ownedOnly: true);
+        }
+        finally
+        {
+            _bypassOperationGate.Release();
+        }
     }
 
     private void OnTick(object? sender, EventArgs e)
@@ -443,8 +611,10 @@ public sealed class AppState : ObservableObject
     private void OnBypassStateChanged()
     {
         RaiseMany(nameof(BypassState), nameof(IsRunning), nameof(IsBusy),
-                  nameof(StatusTitle), nameof(StatusSubtitle), nameof(UptimeText));
-        ToggleBypassCommand.RaiseCanExecuteChanged();
+                  nameof(StatusTitle), nameof(StatusSubtitle), nameof(UptimeText),
+                  nameof(IsSelectedStrategyActive), nameof(CanApplySelectedStrategy),
+                  nameof(StrategyActionText), nameof(StrategyActionHint));
+        RaiseBypassOperationCanExecuteChanged();
 
         if (IsRunning) return;
 
@@ -462,48 +632,301 @@ public sealed class AppState : ObservableObject
         Raise(nameof(HasLog));
     }
 
+    /// <summary>
+    /// Перед запуском без собственного активного процесса перечитываем службу и состояние
+    /// процессов. Кэш ServiceState обновляется раз в пять секунд и для решения о запуске
+    /// недостаточно надёжен.
+    /// </summary>
+    private async Task<bool> EnsureManualStartAllowedAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        await RefreshServiceStateAsync();
+        ct.ThrowIfCancellationRequested();
+
+        _bypass.RefreshState();
+        if (ServiceState is ServiceState.Running or ServiceState.Pending)
+        {
+            Notify(
+                ServiceState == ServiceState.Running
+                    ? "Служба zapret уже работает — сначала остановите или переустановите её"
+                    : "Служба zapret меняет состояние — дождитесь завершения операции",
+                ToastKind.Warning);
+            return false;
+        }
+
+        if (_bypass.State is BypassState.Running && _bypass.ActiveStrategy is null)
+        {
+            Notify(
+                "Уже работает winws.exe, запущенный другой программой. Zapret GUI не будет его завершать.",
+                ToastKind.Warning);
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task AutoRestartBypassAsync(
+        Strategy strategy,
+        GameFilterMode mode,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        _bypass.RefreshState();
+        if (_bypass.State is BypassState.Running or BypassState.Starting)
+            return;
+        if (!await EnsureManualStartAllowedAsync(ct))
+        {
+            _bypass.Log(
+                "Автоперезапуск отменён: служба или сторонний winws.exe уже заняли WinDivert.",
+                LogLevel.Warn);
+            return;
+        }
+
+        ct.ThrowIfCancellationRequested();
+        _bypass.RefreshState();
+        if (_bypass.State is BypassState.Running or BypassState.Starting)
+            return;
+        await _bypass.StartAsync(strategy, mode, ct);
+    }
+
+    private Task QueueAutoRestartAsync(
+        Strategy strategy,
+        GameFilterMode mode)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
+            return Task.CompletedTask;
+        if (dispatcher.CheckAccess())
+        {
+            return RunBypassOperationAsync(
+                ct => AutoRestartBypassAsync(strategy, mode, ct));
+        }
+
+        return dispatcher.InvokeAsync(
+                () => RunBypassOperationAsync(
+                    ct => AutoRestartBypassAsync(strategy, mode, ct)))
+            .Task
+            .Unwrap();
+    }
+
+    private void NotifyManualStartResult(bool started, Strategy target)
+    {
+        if (started)
+        {
+            Notify($"Обход запущен · {target.DisplayName}", ToastKind.Success);
+            return;
+        }
+
+        if (_bypass.State is BypassState.Running && _bypass.ActiveStrategy is null)
+        {
+            Notify(
+                "Запуск отменён: обнаружен чужой или служебный winws.exe",
+                ToastKind.Warning);
+            return;
+        }
+
+        Notify("Запуск не удался — смотрите журнал", ToastKind.Error);
+    }
+
     // ---------- Реализация команд ----------
 
-    private async Task ToggleBypassAsync()
+    /// <summary>
+    /// Запускает выбранную стратегию. Если GUI уже владеет работающим winws.exe, операция
+    /// становится переключением: при неудачном старте возвращаются прежняя стратегия и
+    /// прежний режим игрового фильтра.
+    /// </summary>
+    private async Task ApplySelectedStrategyAsync(CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        var target = SelectedStrategy;
+        if (target is null || IsApplyingStrategy) return;
+
+        _bypass.RefreshState();
+        var previous = _bypass.ActiveStrategy;
+        var wasRunning = IsRunning;
+        var previousMode = _bypass.ActiveGameFilterMode;
+
+        if (previous is null)
+        {
+            if (!await EnsureManualStartAllowedAsync(ct))
+                return;
+
+            // Состояние могло измениться, пока выполнялся запрос к SCM.
+            previous = _bypass.ActiveStrategy;
+            wasRunning = IsRunning;
+            previousMode = _bypass.ActiveGameFilterMode;
+        }
+
+        if (wasRunning && SameStrategy(target, previous) && GameFilter == previousMode)
+        {
+            Notify($"«{target.DisplayName}» уже запущена", ToastKind.Info);
+            return;
+        }
+
+        if (wasRunning && previous is null)
+        {
+            Notify("Обход запущен другой программой — Zapret GUI не будет его завершать",
+                   ToastKind.Warning);
+            return;
+        }
+
+        IsApplyingStrategy = true;
+        try
+        {
+            if (!wasRunning)
+            {
+                var started = await _bypass.StartAsync(target, GameFilter, ct);
+                if (ct.IsCancellationRequested || _isShuttingDown) return;
+
+                NotifyManualStartResult(started, target);
+
+                if (started) _ = TelegramProxy.Instance.StartWithBypassAsync();
+                return;
+            }
+
+            // Ветка wasRunning гарантирует наличие ActiveStrategy: внешний процесс выше
+            // отсекается отдельно и не может участвовать в безопасном откате.
+            var fallback = previous!;
+            var sameProfile = SameStrategy(target, fallback);
+            _bypass.Log(sameProfile
+                ? $"Перезапуск «{target.DisplayName}» с новыми параметрами…"
+                : $"Переключение с «{fallback.DisplayName}» на «{target.DisplayName}»…");
+
+            var switched = await _bypass.StartAsync(target, GameFilter, ct);
+            if (ct.IsCancellationRequested || _isShuttingDown) return;
+
+            if (switched)
+            {
+                Notify(sameProfile
+                        ? $"Обход перезапущен · {target.DisplayName}"
+                        : $"Стратегия переключена · {target.DisplayName}",
+                       ToastKind.Success);
+                _ = TelegramProxy.Instance.StartWithBypassAsync();
+                return;
+            }
+
+            // Между остановкой своего процесса и новым стартом мог появиться служебный
+            // winws.exe. Контроллер его не трогает, а откат рядом с ним невозможен.
+            if (_bypass.State is BypassState.Running && _bypass.ActiveStrategy is null)
+            {
+                SelectedStrategy = fallback;
+                Notify(
+                    "Переключение отменено: обнаружен чужой или служебный winws.exe. Прежняя стратегия не запускалась.",
+                    ToastKind.Warning);
+                return;
+            }
+
+            // Shutdown отменяет token до ожидания общего gate. После этой точки fallback
+            // не должен начинаться, иначе он сможет появиться после финального StopAsync.
+            if (ct.IsCancellationRequested || _isShuttingDown) return;
+
+            // Не оставляем повреждённый профиль последним выбранным: иначе при следующем
+            // AutoStartBypass приложение снова попробует запустить его.
+            SelectedStrategy = fallback;
+            _bypass.Log(
+                $"«{target.DisplayName}» не запустилась. Восстанавливаем «{fallback.DisplayName}»…",
+                LogLevel.Warn);
+
+            var restored = await _bypass.StartAsync(fallback, previousMode, ct);
+            if (ct.IsCancellationRequested || _isShuttingDown) return;
+
+            if (restored)
+            {
+                Notify(sameProfile
+                        ? "Новые параметры не применились — прежняя конфигурация восстановлена"
+                        : $"«{target.DisplayName}» не запустилась — восстановлена «{fallback.DisplayName}»",
+                       ToastKind.Warning);
+                return;
+            }
+
+            Notify(
+                $"Не удалось запустить «{target.DisplayName}» и восстановить «{fallback.DisplayName}». Обход выключен — откройте журнал.",
+                ToastKind.Error);
+        }
+        finally
+        {
+            IsApplyingStrategy = false;
+        }
+    }
+
+    private async Task ToggleBypassAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        _bypass.RefreshState();
+
         if (IsRunning)
         {
-            if (ServiceState is ServiceState.Running && _bypass.ActiveStrategy is null)
+            if (_bypass.ActiveStrategy is null)
             {
-                Notify("winws.exe держит служба zapret — остановите её на вкладке «Стратегии»", ToastKind.Warning);
+                await RefreshServiceStateAsync();
+                _bypass.RefreshState();
+                Notify(
+                    ServiceState is ServiceState.Running or ServiceState.Pending
+                        ? "winws.exe управляется службой zapret — используйте управление службой"
+                        : "winws.exe запущен другой программой — Zapret GUI не будет его завершать",
+                    ToastKind.Warning);
                 return;
             }
 
             await _bypass.StopAsync();
-            Notify("Обход остановлен", ToastKind.Info);
+            if (ct.IsCancellationRequested || _isShuttingDown) return;
+            Notify(
+                IsRunning && _bypass.ActiveStrategy is null
+                    ? "Свой обход остановлен, но чужой или служебный winws.exe продолжает работать"
+                    : "Обход остановлен",
+                IsRunning && _bypass.ActiveStrategy is null ? ToastKind.Warning : ToastKind.Info);
             return;
         }
 
         if (SelectedStrategy is null) return;
-
-        if (ServiceState is ServiceState.Running)
-        {
-            Notify("Сначала удалите службу — она уже держит winws.exe", ToastKind.Warning);
+        if (!await EnsureManualStartAllowedAsync(ct))
             return;
-        }
 
-        var ok = await _bypass.StartAsync(SelectedStrategy, GameFilter);
-        Notify(ok ? $"Обход запущен · {SelectedStrategy.DisplayName}" : "Запуск не удался — смотрите журнал",
-               ok ? ToastKind.Success : ToastKind.Error);
+        var target = SelectedStrategy;
+        var ok = await _bypass.StartAsync(target, GameFilter, ct);
+        if (ct.IsCancellationRequested || _isShuttingDown) return;
+
+        NotifyManualStartResult(ok, target);
 
         // Прокси Telegram поднимается следом, если пользователь включил это на странице «Телеграм».
         // Обратно вместе с обходом он не гасится: утилита самостоятельная и живёт в трее.
         if (ok) _ = TelegramProxy.Instance.StartWithBypassAsync();
     }
 
-    private async Task InstallServiceAsync()
+    private async Task InstallServiceAsync(CancellationToken ct)
     {
-        if (SelectedStrategy is null) return;
+        ct.ThrowIfCancellationRequested();
+        var target = SelectedStrategy;
+        if (target is null) return;
+        var mode = GameFilter;
+
         BusyMessage = "Устанавливаем службу…";
         try
         {
+            await RefreshServiceStateAsync();
+            ct.ThrowIfCancellationRequested();
+            _bypass.RefreshState();
+            if (ServiceState is ServiceState.Pending or ServiceState.Unknown)
+            {
+                Notify(
+                    "Состояние службы ещё не определено — дождитесь обновления статуса",
+                    ToastKind.Warning);
+                return;
+            }
+            if (ServiceState != ServiceState.Running &&
+                _bypass.State is BypassState.Running &&
+                _bypass.ActiveStrategy is null)
+            {
+                Notify(
+                    "Служба не установлена: уже работает сторонний winws.exe, и GUI не будет его завершать",
+                    ToastKind.Warning);
+                return;
+            }
+
             await _bypass.StopAsync();
-            var r = await ZapretServiceManager.InstallAsync(SelectedStrategy, GameFilter);
+            ct.ThrowIfCancellationRequested();
+
+            var r = await ZapretServiceManager.InstallAsync(target, mode);
             _bypass.Log(r.Output, r.Success ? LogLevel.Success : LogLevel.Error);
             Notify(r.Success ? "Служба установлена и запущена" : "Не удалось установить службу",
                    r.Success ? ToastKind.Success : ToastKind.Error);
@@ -513,8 +936,9 @@ public sealed class AppState : ObservableObject
         finally { BusyMessage = null; }
     }
 
-    private async Task RemoveServiceAsync()
+    private async Task RemoveServiceAsync(CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         BusyMessage = "Удаляем службу…";
         try
         {
@@ -646,6 +1070,14 @@ public sealed class AppState : ObservableObject
         {
             App.WriteCrashLog(ex, fatal: false);
         }
+    }
+
+    private static bool SameStrategy(Strategy? left, Strategy? right)
+    {
+        if (ReferenceEquals(left, right)) return left is not null;
+        if (left is null || right is null) return false;
+
+        return string.Equals(left.FilePath, right.FilePath, StringComparison.OrdinalIgnoreCase);
     }
 }
 

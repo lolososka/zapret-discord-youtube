@@ -583,21 +583,11 @@
                             VerticalAlignment="Center">
                     <Button x:Name="ApplyButton"
                             Width="132" Height="36"
-                            Content="Применить"
-                            Click="OnApplyClick">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedStrategy}" Value="{x:Null}">
-                                        <Setter Property="IsEnabled" Value="False" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding Tester.IsRunning}" Value="True">
-                                        <Setter Property="IsEnabled" Value="False" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Content="{Binding StrategyActionText}"
+                            ToolTip="{Binding StrategyActionHint}"
+                            ToolTipService.ShowOnDisabled="True"
+                            Command="{Binding ApplySelectedStrategyCommand}" />
 
                     <Button Style="{StaticResource SecondaryButtonStyle}"
                             Margin="12,0,0,0"

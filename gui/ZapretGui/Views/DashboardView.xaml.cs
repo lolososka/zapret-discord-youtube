@@ -236,8 +236,118 @@ public partial class DashboardView : System.Windows.Controls.UserControl
     private void OnOpenLogClick(object sender, RoutedEventArgs e)
         => NavigationRequested?.Invoke(this, "logs");
 
-    private void OnDownloadUpdateClick(object sender, RoutedEventArgs e)
-        => AppState.OpenExternal(UpdateService.DownloadUrl);
+    private async void OnDownloadUpdateClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button)
+            return;
+
+        var owner = Window.GetWindow(this);
+        var answer = MessageBox.Show(
+            owner,
+            "Скачать проверенный portable-релиз и установить его?\n\n" +
+            "Программа сверит SHA-256, сохранит пользовательские списки и настройки, " +
+            "а при неудачном запуске автоматически вернёт предыдущую версию.\n\n" +
+            "Во время замены обход и служба могут ненадолго остановиться.",
+            "Безопасное обновление",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        var oldContent = button.Content;
+        var handoffStarted = false;
+        var preparedExitApproved = false;
+        button.IsEnabled = false;
+        button.Content = "0%";
+        AppState.Instance.Notify(
+            "Скачиваем и проверяем portable-обновление…",
+            ToastKind.Info);
+
+        try
+        {
+            var progress = new Progress<double>(value =>
+                button.Content = $"{Math.Round(value * 100):0}%");
+            var prepared = await ForkUpdateService.PrepareLatestAsync(progress);
+            if (!prepared.Success ||
+                string.IsNullOrWhiteSpace(prepared.PlanPath) ||
+                string.IsNullOrWhiteSpace(prepared.PlanSha256))
+            {
+                AppState.Instance.Notify(prepared.Message, ToastKind.Warning);
+                MessageBox.Show(
+                    owner,
+                    prepared.Message + "\n\nМожно скачать релиз вручную:\n" +
+                    UpdateService.DownloadUrl,
+                    "Обновление не применено",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var mainWindow =
+                Application.Current.MainWindow as MainWindow;
+            if (mainWindow is not null &&
+                !mainWindow.TryApprovePreparedExit())
+            {
+                AppState.Instance.Notify(
+                    "Обновление отложено: сначала сохраните пользовательские списки",
+                    ToastKind.Warning);
+                return;
+            }
+            preparedExitApproved = mainWindow is not null;
+
+            if (!PortableUpdateInstaller.LaunchHelper(
+                    prepared.PlanPath,
+                    prepared.PlanSha256,
+                    out var launchError))
+            {
+                AppState.Instance.Notify(
+                    "Не удалось запустить установщик обновления",
+                    ToastKind.Error);
+                MessageBox.Show(
+                    owner,
+                    "Пакет был загружен и проверен, но helper не запустился:\n\n" +
+                    launchError,
+                    "Обновление не применено",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            AppState.Instance.Notify(
+                "Пакет проверен. Перезапускаем приложение…",
+                ToastKind.Success);
+            handoffStarted = true;
+            button.Content = "Перезапуск…";
+            if (mainWindow is not null)
+                mainWindow.ExitForPreparedUpdate();
+            else
+                Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex, fatal: false);
+            AppState.Instance.Notify(
+                "Не удалось подготовить обновление",
+                ToastKind.Error);
+            MessageBox.Show(
+                owner,
+                ex.Message,
+                "Ошибка обновления",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (!handoffStarted)
+            {
+                if (preparedExitApproved &&
+                    Application.Current.MainWindow is MainWindow mainWindow)
+                    mainWindow.CancelPreparedExitApproval();
+                button.Content = oldContent;
+                button.IsEnabled = true;
+            }
+        }
+    }
 
     // ---------- быстрые переключатели ----------
 
