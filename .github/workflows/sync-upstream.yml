@@ -227,9 +227,15 @@ jobs:
           $checksumAsset = $assets |
             Where-Object name -eq 'SHA256SUMS.txt' |
             Select-Object -First 1
-          $checksumText = (
+          $checksumContent = (
             Invoke-WebRequest -Uri $checksumAsset.browser_download_url -Headers $headers
           ).Content
+          if ($checksumContent -is [byte[]]) {
+            $checksumText = [Text.Encoding]::UTF8.GetString($checksumContent)
+          }
+          else {
+            $checksumText = [string]$checksumContent
+          }
           $checksumMap = @{}
           foreach ($line in ($checksumText -split "\r?\n")) {
             if ($line -match '^([0-9a-fA-F]{64})  (.+)$') {
@@ -522,6 +528,8 @@ jobs:
           EXPECTED_UPSTREAM_COMMIT: ${{ needs.prepare.outputs.upstream_sha }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $PSNativeCommandUseErrorActionPreference = $false
           Set-StrictMode -Version Latest
 
           function Invoke-GhApi {
@@ -576,6 +584,14 @@ jobs:
             throw "Release did not appear in the GitHub API: $Tag"
           }
 
+          function Get-ReleaseById {
+            param(
+              [Parameter(Mandatory)][string]$Repository,
+              [Parameter(Mandatory)][long]$ReleaseId
+            )
+            return Invoke-GhApi "repos/$Repository/releases/$ReleaseId"
+          }
+
           function Resolve-TagCommit {
             param(
               [Parameter(Mandatory)][string]$Repository,
@@ -598,6 +614,144 @@ jobs:
               throw "Tag $Tag points to unsupported object type: $objectType"
             }
             return $objectSha
+          }
+
+          function Test-ReleaseAsset {
+            param(
+              [Parameter(Mandatory)]$Asset,
+              [Parameter(Mandatory)][long]$ExpectedSize,
+              [Parameter(Mandatory)][string]$ExpectedDigest
+            )
+
+            $digestProperty = $Asset.PSObject.Properties['digest']
+            $digest = if ($null -eq $digestProperty) {
+              ''
+            }
+            else {
+              [string]$digestProperty.Value
+            }
+
+            return (
+              [string]$Asset.state -eq 'uploaded' -and
+              [long]$Asset.size -eq $ExpectedSize -and
+              $digest.ToLowerInvariant() -eq $ExpectedDigest
+            )
+          }
+
+          function Sync-ReleaseAsset {
+            param(
+              [Parameter(Mandatory)][string]$Repository,
+              [Parameter(Mandatory)][long]$ReleaseId,
+              [Parameter(Mandatory)][string]$Tag,
+              [Parameter(Mandatory)][string]$Path
+            )
+
+            $file = Get-Item -LiteralPath $Path
+            $name = $file.Name
+            $fileHash = (
+              Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+            $expectedDigest = "sha256:$fileHash"
+
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              $current = Get-ReleaseById `
+                -Repository $Repository `
+                -ReleaseId $ReleaseId
+              if (
+                -not $current.draft -or
+                [string]$current.tag_name -ne $Tag
+              ) {
+                throw "Release $ReleaseId is no longer the expected draft."
+              }
+
+              $matches = @($current.assets | Where-Object name -eq $name)
+              if ($matches.Count -eq 1) {
+                if (
+                  Test-ReleaseAsset `
+                    -Asset $matches[0] `
+                    -ExpectedSize $file.Length `
+                    -ExpectedDigest $expectedDigest
+                ) {
+                  return
+                }
+              }
+
+              foreach ($match in $matches) {
+                & gh api `
+                  --method DELETE `
+                  "repos/$Repository/releases/assets/$($match.id)" `
+                  --silent
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Could not remove stale draft asset: $name"
+                }
+              }
+
+              $expectedUploadUrl = (
+                "https://uploads.github.com/repos/$Repository/" +
+                "releases/$ReleaseId/assets{?name,label}"
+              )
+              if ([string]$current.upload_url -ne $expectedUploadUrl) {
+                throw "Unexpected release upload URL: $($current.upload_url)"
+              }
+              $uploadBase = $expectedUploadUrl.Replace('{?name,label}', '')
+              $encodedName = [Uri]::EscapeDataString($name)
+              $uploadUri = "${uploadBase}?name=$encodedName"
+              $headers = @{
+                Accept = 'application/vnd.github+json'
+                Authorization = "Bearer $env:GH_TOKEN"
+                'User-Agent' = 'zapret-control-center-release-publisher'
+                'X-GitHub-Api-Version' = '2022-11-28'
+              }
+
+              try {
+                $uploaded = Invoke-RestMethod `
+                  -Method Post `
+                  -Uri $uploadUri `
+                  -Headers $headers `
+                  -ContentType 'application/octet-stream' `
+                  -InFile $file.FullName
+                if (
+                  -not (
+                    Test-ReleaseAsset `
+                      -Asset $uploaded `
+                      -ExpectedSize $file.Length `
+                      -ExpectedDigest $expectedDigest
+                  )
+                ) {
+                  throw "GitHub returned an invalid uploaded asset: $name"
+                }
+                return
+              }
+              catch {
+                $uploadError = $_
+                Start-Sleep -Seconds 2
+
+                # A 502 can leave a starter asset even when the response failed.
+                $after = Get-ReleaseById `
+                  -Repository $Repository `
+                  -ReleaseId $ReleaseId
+                $afterMatches = @(
+                  $after.assets | Where-Object name -eq $name
+                )
+                if (
+                  $afterMatches.Count -eq 1 -and
+                  (
+                    Test-ReleaseAsset `
+                      -Asset $afterMatches[0] `
+                      -ExpectedSize $file.Length `
+                      -ExpectedDigest $expectedDigest
+                  )
+                ) {
+                  return
+                }
+                if ($attempt -eq 3) {
+                  throw (
+                    "Could not upload $name after reconciliation: " +
+                    $uploadError.Exception.Message
+                  )
+                }
+              }
+            }
           }
 
           function Assert-ReleaseAssets {
@@ -648,11 +802,17 @@ jobs:
                 Accept = 'application/octet-stream'
                 'User-Agent' = 'zapret-control-center-release-check'
               }
-              $checksumText = (
+              $checksumContent = (
                 Invoke-WebRequest `
                   -Uri $checksumAsset.browser_download_url `
                   -Headers $headers
               ).Content
+              if ($checksumContent -is [byte[]]) {
+                $checksumText = [Text.Encoding]::UTF8.GetString($checksumContent)
+              }
+              else {
+                $checksumText = [string]$checksumContent
+              }
               $checksumLines = $checksumText -split "\r?\n"
             }
 
@@ -827,33 +987,90 @@ jobs:
             throw "Draft release tag mismatch: expected $($metadata.ForkCommit), got $tagCommit."
           }
 
-          & gh release upload $metadata.Tag `
-            $metadata.ZipPath `
-            $metadata.ExePath `
-            $metadata.ChecksumsPath `
-            --repo $repo `
-            --clobber
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Could not upload the release assets.'
+          $release = Get-ReleaseById `
+            -Repository $repo `
+            -ReleaseId ([long]$release.id)
+          $requiredNames = @(
+            [string]$metadata.ZipName,
+            [string]$metadata.ExeName,
+            [string]$metadata.ChecksumsName
+          )
+          $unexpectedAssets = @(
+            $release.assets |
+              Where-Object { [string]$_.name -notin $requiredNames }
+          )
+          if ($unexpectedAssets.Count -gt 0) {
+            $unexpectedNames = (
+              $unexpectedAssets.name | Sort-Object
+            ) -join ', '
+            throw "Draft contains unexpected assets: $unexpectedNames"
           }
 
-          $release = Wait-ReleaseByTag -Repository $repo -Tag $metadata.Tag
+          foreach ($assetPath in @(
+            [string]$metadata.ZipPath,
+            [string]$metadata.ExePath,
+            [string]$metadata.ChecksumsPath
+          )) {
+            Sync-ReleaseAsset `
+              -Repository $repo `
+              -ReleaseId ([long]$release.id) `
+              -Tag ([string]$metadata.Tag) `
+              -Path $assetPath
+          }
+
+          $release = Get-ReleaseById `
+            -Repository $repo `
+            -ReleaseId ([long]$release.id)
+          if (@($release.assets).Count -ne 3) {
+            throw "Draft must contain exactly three assets; found $(@($release.assets).Count)."
+          }
           Assert-ReleaseAssets `
             -Release $release `
             -Metadata $metadata `
             -CompareLocal $true
 
-          & gh release edit $metadata.Tag `
-            --repo $repo `
-            --draft=false `
-            --latest
+          # Create only an absent tag; an existing tag is never moved.
+          $tagCommit = Resolve-TagCommit `
+            -Repository $repo `
+            -Tag $metadata.Tag
+          if ($null -eq $tagCommit) {
+            $null = & gh api `
+              --method POST `
+              "repos/$repo/git/refs" `
+              -f "ref=refs/tags/$($metadata.Tag)" `
+              -f "sha=$($metadata.ForkCommit)" `
+              2>$null
+            $createTagExitCode = $LASTEXITCODE
+            $tagCommit = Resolve-TagCommit `
+              -Repository $repo `
+              -Tag $metadata.Tag
+            if (
+              $createTagExitCode -ne 0 -and
+              $tagCommit -ne [string]$metadata.ForkCommit
+            ) {
+              throw "Could not create the release tag: $($metadata.Tag)"
+            }
+          }
+          if ($tagCommit -ne [string]$metadata.ForkCommit) {
+            throw "Refusing to publish: tag points to $tagCommit instead of $($metadata.ForkCommit)."
+          }
+
+          $publishRaw = & gh api `
+            --method PATCH `
+            "repos/$repo/releases/$($release.id)" `
+            -F draft=false `
+            -f make_latest=true
           if ($LASTEXITCODE -ne 0) {
             throw 'Could not publish the verified release.'
           }
 
-          $release = Wait-ReleaseByTag -Repository $repo -Tag $metadata.Tag
-          if ($release.draft) {
-            throw 'The release is still a draft after publication.'
+          $release = (($publishRaw -join "`n") | ConvertFrom-Json)
+          if (
+            [long]$release.id -le 0 -or
+            [string]$release.tag_name -ne [string]$metadata.Tag -or
+            $release.draft
+          ) {
+            throw 'GitHub returned an unexpected release after publication.'
           }
           $tagCommit = Resolve-TagCommit -Repository $repo -Tag $metadata.Tag
           if ($tagCommit -ne $metadata.ForkCommit) {
