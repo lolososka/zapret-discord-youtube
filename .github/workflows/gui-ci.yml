@@ -1,0 +1,121 @@
+name: GUI CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gui-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Validate the single version source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$project = Get-Content `
+            -LiteralPath ./gui/ZapretGui/ZapretGui.csproj `
+            -Raw
+          $versions = @(
+            $project.Project.PropertyGroup.Version |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          )
+          if ($versions.Count -ne 1) {
+            throw 'ZapretGui.csproj must contain exactly one <Version>.'
+          }
+          if ([string]$versions[0] -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw "GUI version must use numeric x.y.z: $($versions[0])"
+          }
+          if ($project.Project.PropertyGroup.FileVersion -or
+              $project.Project.PropertyGroup.AssemblyVersion) {
+            throw 'FileVersion and AssemblyVersion must be derived from <Version>.'
+          }
+
+      - name: Run updater, strategy, manifest, and privacy smoke checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run `
+            --project ./gui/ZapretGui.Smoke/ZapretGui.Smoke.csproj `
+            --configuration Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "Smoke checks failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Publish GUI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./gui/build.ps1 -NoDeploy
+          if ($LASTEXITCODE -ne 0) {
+            throw "GUI publish failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Build and validate the portable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = Join-Path $env:RUNNER_TEMP 'zapret-gui-release'
+          $upstreamVersion = (
+            Get-Content -LiteralPath ./.service/version.txt -TotalCount 1
+          ).Trim()
+          $upstreamCommit = (
+            Get-Content -LiteralPath ./.github/upstream-sync-base -Raw
+          ).Trim()
+          $forkCommit = (git rev-parse HEAD).Trim()
+
+          & ./gui/package-release.ps1 `
+            -OutputDir $releaseDir `
+            -UpstreamVersion $upstreamVersion `
+            -UpstreamCommit $upstreamCommit `
+            -ForkCommit $forkCommit
+          if ($LASTEXITCODE -ne 0) {
+            throw "Portable packaging failed with exit code $LASTEXITCODE."
+          }
+
+          $metadataPath = Join-Path $releaseDir 'release-metadata.json'
+          $metadata = Get-Content -LiteralPath $metadataPath -Raw |
+            ConvertFrom-Json
+          foreach ($path in @(
+            $metadata.ZipPath,
+            $metadata.ExePath,
+            $metadata.ChecksumsPath
+          )) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+                (Get-Item -LiteralPath $path).Length -le 0) {
+              throw "Release asset is missing or empty: $path"
+            }
+          }
+
+          dotnet run `
+            --project ./gui/ZapretGui.Smoke/ZapretGui.Smoke.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --package `
+            $metadata.ZipPath `
+            $metadata.GuiVersion `
+            $metadata.UpstreamVersion `
+            $metadata.Tag
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged ZIP validation failed with exit code $LASTEXITCODE."
+          }

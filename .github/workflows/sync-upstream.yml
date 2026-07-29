@@ -151,7 +151,7 @@ jobs:
               head -n 1 |
               tr -d '\r\n[:space:]'
           )"
-          if ! [[ "$GUI_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]]; then
+          if ! [[ "$GUI_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Invalid GUI version: $GUI_VERSION" >&2
             exit 1
           fi
@@ -282,6 +282,7 @@ jobs:
             'gui/LICENSE',
             'gui/THIRD_PARTY_NOTICES.md',
             'gui/ZapretGui/ZapretGui.csproj',
+            'gui/ZapretGui.Smoke/ZapretGui.Smoke.csproj',
             'gui/build.ps1',
             'gui/package-release.ps1'
           )
@@ -294,6 +295,18 @@ jobs:
           $strategies = @(Get-ChildItem -LiteralPath . -Filter 'general*.bat' -File)
           if ($strategies.Count -eq 0) {
             throw 'No general*.bat strategies found after upstream sync.'
+          }
+
+      - name: Run updater, strategy, manifest, and privacy smoke checks
+        if: steps.release-gate.outputs.needed == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run `
+            --project ./gui/ZapretGui.Smoke/ZapretGui.Smoke.csproj `
+            --configuration Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "Smoke checks failed with exit code $LASTEXITCODE."
           }
 
       - name: Publish GUI compatibility build
@@ -344,6 +357,24 @@ jobs:
             -UpstreamCommit $env:UPSTREAM_COMMIT `
             -ForkCommit $env:FORK_COMMIT
 
+          $metadata = Get-Content `
+            -LiteralPath (Join-Path $releaseDir 'release-metadata.json') `
+            -Raw |
+            ConvertFrom-Json
+          dotnet run `
+            --project ./gui/ZapretGui.Smoke/ZapretGui.Smoke.csproj `
+            --configuration Release `
+            --no-build `
+            -- `
+            --package `
+            $metadata.ZipPath `
+            $metadata.GuiVersion `
+            $metadata.UpstreamVersion `
+            $metadata.Tag
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged ZIP validation failed with exit code $LASTEXITCODE."
+          }
+
       - name: Bundle the verified sync commit
         if: steps.sync.outputs.changed == 'true'
         shell: pwsh
@@ -370,7 +401,7 @@ jobs:
 
       - name: Upload the verified handoff
         if: steps.release-gate.outputs.needed == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: prepared-release-${{ github.run_id }}
           path: ${{ runner.temp }}/handoff
@@ -395,7 +426,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the verified handoff
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: prepared-release-${{ github.run_id }}
           path: ${{ runner.temp }}/handoff
