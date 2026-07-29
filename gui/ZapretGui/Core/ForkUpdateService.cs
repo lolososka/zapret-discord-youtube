@@ -125,6 +125,12 @@ public static partial class ForkUpdateService
 
         var guiVersion = match.Groups["gui"].Value;
         var upstreamVersion = match.Groups["upstream"].Value;
+        if (!VersionPolicy.TryParse(guiVersion, out _))
+        {
+            throw new InvalidDataException(
+                "Версия GUI в релизе должна иметь числовой формат x.y.z: " +
+                guiVersion);
+        }
         var expectedZip =
             $"zapret-control-center-{guiVersion}-flowseal-{upstreamVersion}-win-x64.zip";
 
@@ -511,30 +517,16 @@ public static partial class ForkUpdateService
     }
 
     internal static bool IsNewer(string remote, string local)
-    {
-        if (Version.TryParse(NormalizeVersion(remote), out var remoteVersion) &&
-            Version.TryParse(NormalizeVersion(local), out var localVersion))
-            return remoteVersion > localVersion;
-
-        return !string.Equals(
-            remote.Trim(),
-            local.Trim(),
-            StringComparison.OrdinalIgnoreCase);
-    }
+        => VersionPolicy.IsNewer(remote, local);
 
     internal static bool IsUpdateAvailable(ForkRelease release)
     {
-        if (IsNewer(release.GuiVersion, UpdateService.LocalVersion))
-            return true;
-        if (IsNewer(UpdateService.LocalVersion, release.GuiVersion))
-            return false;
-
         var installedTag = ReadInstalledReleaseTag();
-        return !string.IsNullOrWhiteSpace(installedTag) &&
-               !string.Equals(
-                   installedTag,
-                   release.Tag,
-                   StringComparison.OrdinalIgnoreCase);
+        return VersionPolicy.DecidePortableUpdate(
+            release.GuiVersion,
+            UpdateService.LocalVersion,
+            release.Tag,
+            installedTag).IsAvailable;
     }
 
     private static string? ReadInstalledReleaseTag()
@@ -591,12 +583,6 @@ public static partial class ForkUpdateService
         }
     }
 
-    private static string NormalizeVersion(string value)
-    {
-        var match = VersionRegex().Match(value.Trim());
-        return match.Success ? match.Value : value.Trim().TrimStart('v', 'V');
-    }
-
     private static string RequiredString(JsonElement element, string property)
     {
         var value = OptionalString(element, property);
@@ -644,6 +630,4 @@ public static partial class ForkUpdateService
         RegexOptions.CultureInvariant)]
     private static partial Regex ReleaseTagRegex();
 
-    [GeneratedRegex("[0-9]+(?:\\.[0-9]+){1,3}", RegexOptions.CultureInvariant)]
-    private static partial Regex VersionRegex();
 }

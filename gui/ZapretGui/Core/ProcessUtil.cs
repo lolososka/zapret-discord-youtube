@@ -81,18 +81,25 @@ public static class ProcessUtil
         return ExecuteAsync(psi, timeoutMs, ct);
     }
 
-    public static bool IsProcessRunning(string imageName)
+    public static bool IsProcessRunning(string imageName) =>
+        TryIsProcessRunning(imageName, out var isRunning) && isRunning;
+
+    public static bool TryIsProcessRunning(
+        string imageName,
+        out bool isRunning)
     {
+        isRunning = false;
         try
         {
             var name = StripExe(imageName);
             if (name.Length == 0)
-                return false;
+                return true;
 
             var found = Process.GetProcessesByName(name);
             try
             {
-                return found.Length > 0;
+                isRunning = found.Length > 0;
+                return true;
             }
             finally
             {

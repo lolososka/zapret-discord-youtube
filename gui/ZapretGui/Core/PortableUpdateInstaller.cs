@@ -50,7 +50,9 @@ public static class PortableUpdateInstaller
 
     private const string ServiceName = "zapret";
     private const string IpsetSentinel = "203.0.113.113/32";
-    private const int MaxManifestFiles = 10_000;
+    // В ZIP есть ещё сам UPDATE_MANIFEST.json, а распаковщик допускает
+    // не более 10 000 записей целиком.
+    private const int MaxManifestFiles = 9_999;
     private const string UpdateMutexName =
         @"Global\ZapretGUI.Update.Apply";
     private const string UpdateReadyEventPrefix =
@@ -115,6 +117,10 @@ public static class PortableUpdateInstaller
         if (manifest.SchemaVersion != 1)
             throw new InvalidDataException(
                 $"Версия манифеста {manifest.SchemaVersion} не поддерживается.");
+        if (!VersionPolicy.TryParse(expectedGuiVersion, out _) ||
+            !VersionPolicy.TryParse(manifest.GuiVersion, out _))
+            throw new InvalidDataException(
+                "Версия GUI в манифесте должна иметь числовой формат x.y.z.");
         if (!string.Equals(
                 manifest.GuiVersion,
                 expectedGuiVersion,

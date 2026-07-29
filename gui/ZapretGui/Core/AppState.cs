@@ -22,6 +22,7 @@ public sealed class AppState : ObservableObject
     private readonly SemaphoreSlim _bypassOperationGate = new(1, 1);
     private readonly CancellationTokenSource _shutdownCancellation = new();
     private readonly object _shutdownSync = new();
+    private CancellationTokenSource? _diagnosticsCancellation;
     private int _slowTick;
     private bool _isBypassOperationActive;
     private bool _isShuttingDown;
@@ -50,7 +51,14 @@ public sealed class AppState : ObservableObject
         RemoveServiceCommand = new AsyncRelayCommand(
             () => RunBypassOperationAsync(RemoveServiceAsync),
             () => CanStartBypassOperation);
-        RunDiagnosticsCommand = new AsyncRelayCommand(RunDiagnosticsAsync);
+        RunDiagnosticsCommand = new AsyncRelayCommand(
+            RunDiagnosticsAsync,
+            () => !IsDiagnosticsRunning && !_isShuttingDown);
+        CancelDiagnosticsCommand = new RelayCommand(
+            CancelDiagnostics,
+            () => IsDiagnosticsRunning &&
+                  !_isShuttingDown &&
+                  _diagnosticsCancellation is { IsCancellationRequested: false });
         RunProbesCommand = new AsyncRelayCommand(RunProbesAsync);
         UpdateIpsetCommand = new AsyncRelayCommand(UpdateIpsetAsync);
         CheckHostsCommand = new AsyncRelayCommand(CheckHostsAsync);
@@ -317,7 +325,15 @@ public sealed class AppState : ObservableObject
     // ---------- Прогресс длительных операций ----------
 
     private bool _isDiagnosticsRunning;
-    public bool IsDiagnosticsRunning { get => _isDiagnosticsRunning; private set => Set(ref _isDiagnosticsRunning, value); }
+    public bool IsDiagnosticsRunning
+    {
+        get => _isDiagnosticsRunning;
+        private set
+        {
+            if (!Set(ref _isDiagnosticsRunning, value)) return;
+            RaiseDiagnosticsCanExecuteChanged();
+        }
+    }
 
     private bool _isProbing;
     public bool IsProbing { get => _isProbing; private set => Set(ref _isProbing, value); }
@@ -332,6 +348,7 @@ public sealed class AppState : ObservableObject
     public AsyncRelayCommand InstallServiceCommand { get; }
     public AsyncRelayCommand RemoveServiceCommand { get; }
     public AsyncRelayCommand RunDiagnosticsCommand { get; }
+    public RelayCommand CancelDiagnosticsCommand { get; }
     public AsyncRelayCommand RunProbesCommand { get; }
     public AsyncRelayCommand UpdateIpsetCommand { get; }
     public AsyncRelayCommand CheckHostsCommand { get; }
@@ -373,6 +390,56 @@ public sealed class AppState : ObservableObject
         }
         finally
         {
+            _bypassOperationGate.Release();
+        }
+    }
+
+    public async Task<CheckFixResult> ApplyDiagnosticFixAsync(
+        CheckResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var fix = result.Fix;
+        if (fix is null)
+            return new CheckFixResult(false, "Автоматическое исправление больше недоступно.");
+        if (_isShuttingDown)
+            return new CheckFixResult(false, "Приложение завершает работу.");
+
+        try
+        {
+            await _bypassOperationGate.WaitAsync(_shutdownCancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return new CheckFixResult(false, "Исправление отменено при завершении работы.");
+        }
+
+        try
+        {
+            if (_isShuttingDown)
+                return new CheckFixResult(false, "Приложение завершает работу.");
+
+            SetBypassOperationActive(true);
+            if (result.RequiresStoppedBypass)
+            {
+                if (!ProcessUtil.TryIsProcessRunning("winws.exe", out var running))
+                {
+                    return new CheckFixResult(
+                        false,
+                        "Не удалось безопасно проверить winws.exe. Удаление служб отменено.");
+                }
+                if (running)
+                {
+                    return new CheckFixResult(
+                        false,
+                        "Сначала остановите все работающие обходы, затем повторите исправление.");
+                }
+            }
+
+            return await fix();
+        }
+        finally
+        {
+            SetBypassOperationActive(false);
             _bypassOperationGate.Release();
         }
     }
@@ -564,6 +631,7 @@ public sealed class AppState : ObservableObject
     {
         _isShuttingDown = true;
         _shutdownCancellation.Cancel();
+        RaiseDiagnosticsCanExecuteChanged();
         _ticker.Stop();
         Traffic.Stop();
         Tester.Cancel();
@@ -962,7 +1030,10 @@ public sealed class AppState : ObservableObject
 
     private async Task RunDiagnosticsAsync()
     {
-        if (IsDiagnosticsRunning) return;
+        if (IsDiagnosticsRunning || _isShuttingDown) return;
+
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCancellation.Token);
+        _diagnosticsCancellation = cancellation;
         IsDiagnosticsRunning = true;
         Diagnostics.Clear();
         try
@@ -977,19 +1048,61 @@ public sealed class AppState : ObservableObject
                     Diagnostics[i] = r;
                 }
             });
-            await DiagnosticsRunner.RunAllAsync(progress, CancellationToken.None);
+            await DiagnosticsRunner.RunAllAsync(progress, cancellation.Token);
 
             var bad = Diagnostics.Count(d => d.Status == CheckStatus.Failed);
             var warn = Diagnostics.Count(d => d.Status == CheckStatus.Warning);
+            var inconclusive = Diagnostics.Count(d => d.Status == CheckStatus.Inconclusive);
             var badText = $"{bad} {Plural(bad, "проблема", "проблемы", "проблем")}";
             var warnText = $"{warn} {Plural(warn, "предупреждение", "предупреждения", "предупреждений")}";
+            var inconclusiveText =
+                $"{inconclusive} {Plural(inconclusive, "проверка не завершена", "проверки не завершены", "проверок не завершено")}";
+            var summary = new List<string>();
+            if (bad > 0) summary.Add(badText);
+            if (warn > 0) summary.Add(warnText);
+            if (inconclusive > 0) summary.Add(inconclusiveText);
 
-            Notify(bad > 0 ? $"Диагностика: {badText}, {warnText}"
-                           : warn > 0 ? $"Диагностика: {warnText}"
-                           : "Диагностика: всё в порядке",
-                   bad > 0 ? ToastKind.Error : warn > 0 ? ToastKind.Warning : ToastKind.Success);
+            Notify(summary.Count > 0
+                    ? "Диагностика: " + string.Join(", ", summary)
+                    : "Диагностика: всё в порядке",
+                   bad > 0
+                       ? ToastKind.Error
+                       : warn > 0 || inconclusive > 0
+                           ? ToastKind.Warning
+                           : ToastKind.Success);
         }
-        finally { IsDiagnosticsRunning = false; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            if (!_isShuttingDown)
+                Notify("Диагностика отменена.", ToastKind.Info);
+        }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex, fatal: false);
+            if (!_isShuttingDown)
+                Notify("Диагностику не удалось завершить: " + ex.Message, ToastKind.Error);
+        }
+        finally
+        {
+            if (ReferenceEquals(_diagnosticsCancellation, cancellation))
+                _diagnosticsCancellation = null;
+            IsDiagnosticsRunning = false;
+        }
+    }
+
+    private void CancelDiagnostics()
+    {
+        var cancellation = _diagnosticsCancellation;
+        if (cancellation is null || cancellation.IsCancellationRequested) return;
+
+        cancellation.Cancel();
+        CancelDiagnosticsCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseDiagnosticsCanExecuteChanged()
+    {
+        RunDiagnosticsCommand.RaiseCanExecuteChanged();
+        CancelDiagnosticsCommand.RaiseCanExecuteChanged();
     }
 
     private async Task RunProbesAsync()

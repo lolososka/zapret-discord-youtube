@@ -1,6 +1,9 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -27,6 +30,9 @@ public partial class DiagnosticsView : UserControl
     private Storyboard? _sweep;
     private Brush? _sweepMask;
     private bool _attached;
+    private bool _isBuildingSupportBundle;
+    private bool _isApplyingFix;
+    private bool _focusCancelWhenDiagnosticsStarts;
 
     public DiagnosticsView()
     {
@@ -74,6 +80,7 @@ public partial class DiagnosticsView : UserControl
                 break;
             case nameof(AppState.IsDiagnosticsRunning):
                 UpdateScan();
+                UpdateSummary();
                 break;
         }
     }
@@ -161,7 +168,10 @@ public partial class DiagnosticsView : UserControl
     }
 
     private static bool IsFinished(CheckStatus status)
-        => status is CheckStatus.Ok or CheckStatus.Warning or CheckStatus.Failed;
+        => status is CheckStatus.Ok
+            or CheckStatus.Warning
+            or CheckStatus.Failed
+            or CheckStatus.Inconclusive;
 
     // ---------- Построение строки ----------
 
@@ -276,6 +286,7 @@ public partial class DiagnosticsView : UserControl
         };
         if (result.Status == CheckStatus.Failed) detail.Foreground = Res<Brush>("BrushDanger");
         else if (result.Status == CheckStatus.Warning) detail.Foreground = Res<Brush>("BrushWarning");
+        else if (result.Status == CheckStatus.Inconclusive) detail.Foreground = Res<Brush>("BrushTextSecondary");
         Grid.SetColumn(detail, 2);
         content.Children.Add(detail);
 
@@ -295,6 +306,8 @@ public partial class DiagnosticsView : UserControl
             var fix = IconButton("IconWrenchStroke", result.FixLabel!);
             fix.Tag = row;
             fix.Click += OnFixClick;
+            fix.IsEnabled = CanApplyFix;
+            row.FixButton = fix;
             Grid.SetColumn(fix, 4);
             content.Children.Add(fix);
         }
@@ -316,6 +329,7 @@ public partial class DiagnosticsView : UserControl
                 Data = Res<Geometry>(iconKey),
             },
         };
+        AutomationProperties.SetName(button, tip);
         return button;
     }
 
@@ -324,6 +338,7 @@ public partial class DiagnosticsView : UserControl
         CheckStatus.Ok => ("IconCheckStroke", "BrushSuccess"),
         CheckStatus.Warning => ("IconAlertStroke", "BrushWarning"),
         CheckStatus.Failed => ("IconCloseStroke", "BrushDanger"),
+        CheckStatus.Inconclusive => ("IconInfoStroke", "BrushTextTertiary"),
         _ => ("IconInfoStroke", "BrushTextTertiary"),
     };
 
@@ -338,6 +353,8 @@ public partial class DiagnosticsView : UserControl
     private async void OnFixClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not RowVisual row) return;
+        if (!CanApplyFix)
+            return;
 
         var result = row.Result;
         if (result.Fix is null)
@@ -346,27 +363,86 @@ public partial class DiagnosticsView : UserControl
             return;
         }
 
-        button.IsEnabled = false;
+        if (RequiresConfirmation(result) && !ConfirmDestructiveFix(result))
+            return;
+
+        _isApplyingFix = true;
+        UpdateScan();
         try
         {
-            var message = await result.Fix();
+            var fixResult = await _state.ApplyDiagnosticFixAsync(result);
+            var message = string.IsNullOrWhiteSpace(fixResult.Message)
+                ? fixResult.Succeeded ? "Исправлено." : "Не удалось применить исправление."
+                : fixResult.Message;
 
-            result.Status = CheckStatus.Ok;
-            result.Detail = string.IsNullOrWhiteSpace(message) ? "Исправлено." : message;
-            result.FixLabel = null;
-            result.Fix = null;
+            result.Detail = message;
+            if (fixResult.Succeeded)
+            {
+                result.Status = CheckStatus.Ok;
+                result.FixLabel = null;
+                result.Fix = null;
+            }
 
             var index = _rows.IndexOf(row);
             if (index >= 0) ReplaceRow(index, result);
 
             UpdateSummary();
-            _state.Notify(result.Detail, ToastKind.Success);
+            _state.Notify(
+                result.Detail,
+                fixResult.Succeeded ? ToastKind.Success : ToastKind.Error);
         }
         catch (Exception ex)
         {
-            button.IsEnabled = true;
             _state.Notify("Не удалось исправить: " + ex.Message, ToastKind.Error);
         }
+        finally
+        {
+            _isApplyingFix = false;
+            UpdateScan();
+        }
+    }
+
+    private bool CanApplyFix =>
+        !_state.IsDiagnosticsRunning &&
+        !_isApplyingFix &&
+        !_isBuildingSupportBundle;
+
+    private static bool RequiresConfirmation(CheckResult result)
+        => result.FixLabel?.Contains("Удалить", StringComparison.OrdinalIgnoreCase) == true;
+
+    private bool ConfirmDestructiveFix(CheckResult result)
+    {
+        var action = result.Id switch
+        {
+            "windivert_orphan" =>
+                "Будет остановлена и удалена служба WinDivert. Если её удерживает другой обход, связанные конфликтующие службы также могут быть удалены.",
+            "conflicts" =>
+                "Будут остановлены и удалены перечисленные конфликтующие службы обхода, а также связанные службы WinDivert и WinDivert14.",
+            _ => "Будет выполнено действие: " + (result.FixLabel ?? "удаление системного компонента") + ".",
+        };
+
+        var text = action
+                   + "\n\n"
+                   + result.Detail
+                   + "\n\nПродолжить?";
+
+        var owner = Window.GetWindow(this);
+        var answer = owner is null
+            ? MessageBox.Show(
+                text,
+                "Подтвердите удаление",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No)
+            : MessageBox.Show(
+                owner,
+                text,
+                "Подтвердите удаление",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+
+        return answer == MessageBoxResult.Yes;
     }
 
     // ---------- Сводка и пустое состояние ----------
@@ -375,7 +451,7 @@ public partial class DiagnosticsView : UserControl
     {
         var items = _state.Diagnostics;
         int total = Math.Max(items.Count, DiagnosticsRunner.CheckTitles.Count);
-        int ok = 0, warn = 0, failed = 0;
+        int ok = 0, warn = 0, failed = 0, inconclusive = 0, running = 0, pending = 0;
 
         foreach (var item in items)
         {
@@ -384,21 +460,63 @@ public partial class DiagnosticsView : UserControl
                 case CheckStatus.Ok: ok++; break;
                 case CheckStatus.Warning: warn++; break;
                 case CheckStatus.Failed: failed++; break;
+                case CheckStatus.Inconclusive: inconclusive++; break;
+                case CheckStatus.Running: running++; break;
+                case CheckStatus.Pending: pending++; break;
             }
         }
 
+        int completed = ok + warn + failed + inconclusive;
+        int missing = Math.Max(0, total - items.Count);
+        int withoutResult = inconclusive + running + pending + missing;
+
         string title, iconKey, brushKey;
-        if (failed > 0) { title = "Найдены проблемы"; iconKey = "IconCloseStroke"; brushKey = "BrushDanger"; }
+        bool notStarted = items.Count == 0 && !_state.IsDiagnosticsRunning;
+        if (notStarted)
+        {
+            title = "Готово к проверке";
+            iconKey = "IconInfoStroke";
+            brushKey = "BrushTextSecondary";
+        }
+        else if (_state.IsDiagnosticsRunning || running > 0)
+        {
+            title = "Идёт проверка";
+            iconKey = "IconRefreshStroke";
+            brushKey = "BrushAccentMid";
+        }
+        else if (failed > 0) { title = "Найдены проблемы"; iconKey = "IconCloseStroke"; brushKey = "BrushDanger"; }
         else if (warn > 0) { title = "Есть предупреждения"; iconKey = "IconAlertStroke"; brushKey = "BrushWarning"; }
+        else if (withoutResult > 0)
+        {
+            title = "Не удалось проверить";
+            iconKey = "IconInfoStroke";
+            brushKey = "BrushTextSecondary";
+        }
         else { title = "Всё в порядке"; iconKey = "IconCheckStroke"; brushKey = "BrushSuccess"; }
 
         var brush = Res<Brush>(brushKey);
+        var countText = notStarted
+            ? $"{total} проверок ожидают запуска"
+            : _state.IsDiagnosticsRunning || running > 0
+                ? $"{completed} из {total} проверок завершено"
+                : withoutResult > 0
+                    ? $"{ok} из {total} проверок пройдено · {withoutResult} без результата"
+                    : $"{ok} из {total} проверок пройдено";
+        bool announce = SummaryTitle.Text != title || SummaryCount.Text != countText;
         SummaryTitle.Text = title;
-        SummaryCount.Text = $"{ok} из {total} проверок пройдено";
+        SummaryCount.Text = countText;
+        AutomationProperties.SetName(
+            SummaryTitle,
+            title + ". " + countText);
         SummaryGlyph.Data = Res<Geometry>(iconKey);
         SummaryGlyph.Stroke = brush;
         SummaryRing.Stroke = brush;
-        SummaryProgress.Width = total > 0 ? Math.Round(200.0 * ok / total) : 0;
+        SummaryProgress.Width = total > 0
+            ? Math.Round(200.0 * (_state.IsDiagnosticsRunning ? completed : ok) / total)
+            : 0;
+
+        if (announce && SummaryTitle.IsLoaded)
+            RaiseLiveRegion(SummaryTitle);
     }
 
     private void UpdateEmptyState()
@@ -503,8 +621,121 @@ public partial class DiagnosticsView : UserControl
 
     private void UpdateScan()
     {
-        if (_state.IsDiagnosticsRunning && !ReducedMotion) StartScan();
+        bool running = _state.IsDiagnosticsRunning;
+        bool moveFocusToCancel = running &&
+                                 (_focusCancelWhenDiagnosticsStarts ||
+                                  RunAllButton.IsKeyboardFocusWithin ||
+                                  EmptyRunAllButton.IsKeyboardFocusWithin);
+        bool moveFocusToRun = !running && CancelDiagnosticsButton.IsKeyboardFocusWithin;
+
+        RunAllButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+        CancelDiagnosticsButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        bool canStart = !running &&
+                        !_isApplyingFix &&
+                        !_isBuildingSupportBundle;
+        RunAllButton.IsEnabled = canStart;
+        EmptyRunAllButton.IsEnabled = canStart;
+        SupportBundleButton.IsEnabled =
+            !running &&
+            !_isApplyingFix &&
+            !_isBuildingSupportBundle;
+
+        foreach (var row in _rows)
+            if (row.FixButton is not null)
+                row.FixButton.IsEnabled = CanApplyFix;
+
+        if (moveFocusToCancel)
+        {
+            _focusCancelWhenDiagnosticsStarts = false;
+            CancelDiagnosticsButton.Focus();
+        }
+        else if (moveFocusToRun)
+            RunAllButton.Focus();
+
+        if (running && !ReducedMotion) StartScan();
         else StopScan();
+    }
+
+    private void OnRunDiagnosticsClick(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is Button button && button.IsKeyboardFocusWithin)
+            _focusCancelWhenDiagnosticsStarts = true;
+    }
+
+    // ---------- Отчёт для поддержки ----------
+
+    private async void OnSupportBundleClick(object sender, RoutedEventArgs e)
+    {
+        if (_isBuildingSupportBundle ||
+            _state.IsDiagnosticsRunning ||
+            _isApplyingFix)
+        {
+            _state.Notify(
+                "Дождитесь завершения диагностики или исправления, затем соберите отчёт.",
+                ToastKind.Info);
+            return;
+        }
+
+        bool restoreKeyboardFocus =
+            SupportBundleButton.IsKeyboardFocusWithin;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Сохранить отчёт для поддержки",
+            Filter = "ZIP-архив (*.zip)|*.zip",
+            DefaultExt = ".zip",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = "zapret-support-"
+                       + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)
+                       + ".zip",
+        };
+
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+            return;
+
+        _isBuildingSupportBundle = true;
+        SupportBundleButton.Content = "Собираем…";
+        SupportBundleStatus.Visibility = Visibility.Collapsed;
+        UpdateScan();
+
+        try
+        {
+            var result = await SupportBundleService.CreateAsync(dialog.FileName, _state);
+            SupportBundleStatus.Foreground = Res<Brush>("BrushSuccess");
+            SupportBundleStatus.Text =
+                $"Готово: {Path.GetFileName(dialog.FileName)} · "
+                + $"{result.DiagnosticCount} проверок, {result.LogLineCount} строк журнала";
+            SupportBundleStatus.Visibility = Visibility.Visible;
+            RaiseLiveRegion(SupportBundleStatus);
+            _state.Notify(
+                "Обезличенный отчёт сохранён — содержимое пользовательских списков не включено",
+                ToastKind.Success);
+        }
+        catch (Exception ex)
+        {
+            SupportBundleStatus.Foreground = Res<Brush>("BrushDanger");
+            SupportBundleStatus.Text = "Не удалось собрать отчёт. Попробуйте выбрать другую папку.";
+            SupportBundleStatus.Visibility = Visibility.Visible;
+            RaiseLiveRegion(SupportBundleStatus);
+            _state.Notify("Не удалось собрать отчёт: " + ex.Message, ToastKind.Error);
+        }
+        finally
+        {
+            _isBuildingSupportBundle = false;
+            SupportBundleButton.Content = "Собрать отчёт";
+            UpdateScan();
+            if (restoreKeyboardFocus)
+                SupportBundleButton.Focus();
+        }
+    }
+
+    private static void RaiseLiveRegion(UIElement element)
+    {
+        var peer = UIElementAutomationPeer.FromElement(element)
+                   ?? UIElementAutomationPeer.CreatePeerForElement(element);
+        peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
 
     private void StartScan()
@@ -619,5 +850,6 @@ public partial class DiagnosticsView : UserControl
         public Grid GlyphHost = null!;
         public Shapes.Path? Spinner;
         public Storyboard? Spin;
+        public Button? FixButton;
     }
 }

@@ -12,7 +12,8 @@ namespace ZapretGui.Core;
 /// </summary>
 public static class UpdateService
 {
-    public const string LocalVersion = "1.11.0";
+    public static readonly string LocalVersion =
+        VersionPolicy.ProductVersion(typeof(UpdateService).Assembly);
 
     public const string DownloadUrl = ForkUpdateService.ReleasesUrl;
 
@@ -237,45 +238,6 @@ public static class UpdateService
         return result;
     }
 
-    /// <summary>Числовое сравнение версий вида 1.10.0; при разборе не бросает.</summary>
-    private static bool IsNewer(string remote, string local)
-    {
-        try
-        {
-            var r = ParseVersion(remote);
-            var l = ParseVersion(local);
-            var len = Math.Max(r.Length, l.Length);
-            for (var i = 0; i < len; i++)
-            {
-                var rv = i < r.Length ? r[i] : 0;
-                var lv = i < l.Length ? l[i] : 0;
-                if (rv != lv)
-                    return rv > lv;
-            }
-            return false;
-        }
-        catch
-        {
-            return !string.Equals(remote.Trim(), local.Trim(), StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    private static int[] ParseVersion(string version)
-    {
-        var cleaned = new StringBuilder();
-        foreach (var c in version)
-        {
-            if (char.IsDigit(c) || c == '.')
-                cleaned.Append(c);
-            else if (cleaned.Length > 0 && c != 'v' && c != 'V')
-                break;
-        }
-
-        return cleaned.ToString()
-                      .Split('.', StringSplitOptions.RemoveEmptyEntries)
-                      .Select(static p => int.TryParse(p, out var n) ? n : 0)
-                      .ToArray();
-    }
 }
 
 public sealed record SiteProbe(string Name, string Url);

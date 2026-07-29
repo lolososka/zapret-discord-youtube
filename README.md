@@ -17,11 +17,15 @@
 > Готовая portable-сборка: [последний автоматический релиз](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
 >
 > [![Sync Flowseal upstream](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml)
+> [![GUI CI](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/gui-ci.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/gui-ci.yml)
 > Изменения оригинального проекта проверяются и переносятся в форк каждые 6 часов.
 > После успешной проверки автоматически собираются ZIP с GUI и отдельный `ZapretGUI.exe`;
 > их SHA-256 опубликованы рядом в `SHA256SUMS.txt`.
 > Начиная с GUI `1.11.0`, portable-сборка умеет безопасно обновляться из этих релизов:
 > сохраняет пользовательские файлы и автоматически откатывается при неудачном запуске.
+> В GUI `1.12.0` добавлены отменяемая диагностика без ложных `OK`, обезличенный
+> ZIP-отчёт для поддержки и обязательные CI-проверки версии, стратегий,
+> приватности отчёта и portable-пакета до публикации.
 
 > [!CAUTION]
 >
@@ -55,7 +59,10 @@
     * В Windows 11 поддерживается включение Secure DNS прямо в настройках ОС - [инструкция тут](https://remontka.pro/dns-over-https-windows-11/). Рекомендуется, если вы пользуетесь Windows 11
     * Если у вас роутер Keenetic, включите в настройках роутера опцию "Транзит запросов". Отключение этой опции может привести к проблемам при настройке и использовании Secure DNS на компьютере
 
-2. Скачайте архив (zip/rar) со [страницы последнего релиза](https://github.com/Flowseal/zapret-discord-youtube/releases/latest)
+2. Для сборки с Zapret Control Center скачайте ZIP с `win-x64` со
+   [страницы релизов форка](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
+   Оригинальная консольная сборка без GUI остаётся в
+   [релизах Flowseal](https://github.com/Flowseal/zapret-discord-youtube/releases/latest)
 
 3. Зайдите в свойства скачанного архива и поставьте галочку "Разблокировать". Если вы используете архиватор 7-Zip или PeaZip, этот шаг можно пропустить
 
@@ -132,7 +139,10 @@
 - `service.bat` -> `Remove Services`
 - `service.bat` -> `Run Diagnostics` (если есть ошибки - устраните их) -> в конце Y
 - Удалите папку с запретом
-- Скачайте последнюю версию [со страницы релизов](https://github.com/Flowseal/zapret-discord-youtube/releases) (`zapret-discord-youtube-...`)
+- Для GUI скачайте новый portable ZIP
+  [со страницы релизов форка](https://github.com/lolososka/zapret-discord-youtube/releases/latest);
+  оригинальную консольную сборку без GUI можно взять
+  [в релизах Flowseal](https://github.com/Flowseal/zapret-discord-youtube/releases)
 - Нажмите пкм по архиву -> свойства. Если снизу справа есть галочка разблокировать, то нажмите на неё -> применить -> ОК
 - Распакуйте в новую папку в корне диска (без спец. символов и пробелов)
 - Далее пробуйте запускать различные `general` скрипты (стратегии). Проверьте доступность интернет ресурсов - если не работают, то закрывайте программу (в панели задач иконка замочка) и пробуйте другую стратегию

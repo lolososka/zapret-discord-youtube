@@ -13,9 +13,9 @@
     <Product>Zapret Control Center</Product>
     <Description>Графическая оболочка для zapret-discord-youtube</Description>
     <Company>Zapret GUI</Company>
-    <Version>1.11.0</Version>
-    <FileVersion>1.11.0.0</FileVersion>
-    <AssemblyVersion>1.11.0.0</AssemblyVersion>
+    <!-- Единственный источник версии продукта. AssemblyVersion и FileVersion
+         SDK выводит из этого значения автоматически. -->
+    <Version>1.12.0</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

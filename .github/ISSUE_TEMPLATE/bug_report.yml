@@ -1,6 +1,6 @@
-name: 🐛 Проблема
+name: 🐛 Проблема GUI или portable-сборки
 title: '[Проблема] '
-description: Сообщить о проблеме
+description: Сообщить об ошибке Zapret Control Center, updater или portable-релиза
 labels: ['type: проблема', 'status: нуждается в сортировке']
 
 body:
@@ -8,31 +8,76 @@ body:
     id: checklist
     attributes:
       label: ⚠️ Чеклист
-      description: Перед созданием нового Issue, удостоверьтесь что выполнили следующие пункты
+      description: Перед созданием Issue проверьте следующие пункты
       options:
-        - label: Я искал решение проблемы в [README](https://github.com/Flowseal/zapret-discord-youtube/blob/main/README.md) и среди [Issues](https://github.com/Flowseal/zapret-discord-youtube/issues)
-        - label: Я скачал ``zapret-discord-youtube`` из [релизов официального репозитория](https://github.com/Flowseal/zapret-discord-youtube/releases)
+        - label: Я искал решение в [README форка](https://github.com/lolososka/zapret-discord-youtube/blob/main/gui/README.md) и среди [Issues форка](https://github.com/lolososka/zapret-discord-youtube/issues)
+          required: true
+        - label: Я использую сборку из [релизов форка](https://github.com/lolososka/zapret-discord-youtube/releases/latest) либо указал ниже, что запускаю git-клон
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Компонент
+      description: Где проявляется проблема?
+      options:
+        - GUI
+        - Обновление portable-сборки
+        - Установка или служба Windows
+        - Стратегия, список или service.bat
+        - Другое
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_type
+    attributes:
+      label: Тип установки
+      options:
+        - Portable ZIP из релиза форка
+        - Отдельный ZapretGUI.exe в существующей папке
+        - Git-клон / сборка из исходников
+    validations:
+      required: true
 
   - type: textarea
     id: description
     attributes:
-      label: Опишите вашу проблему
-      description: Чётко опишите проблему с которой вы столкнулись
-      placeholder: Описание проблемы
+      label: Что произошло
+      description: Опишите шаги воспроизведения, фактический и ожидаемый результат
+      placeholder: |
+        1. Открыл…
+        2. Нажал…
+        Ожидал…
+        Получил…
     validations:
       required: true
 
   - type: textarea
-    id: version
+    id: versions
     attributes:
-      label: Версия zapret-discord-youtube
-      description: Версия zapret-discord-youtube на которой вы словили проблему
-      placeholder: Версия
+      label: Версии и release tag
+      description: Скопируйте данные из BUILD_INFO.txt; если файла нет, укажите это
+      placeholder: |
+        GUI version: 1.12.0
+        Flowseal version:
+        Release tag:
+        BUILD_INFO.txt отсутствует: да/нет
     validations:
       required: true
 
   - type: textarea
-    id: additions
+    id: update_phase
     attributes:
-      label: Дополнительные детали
-      description: Дополнительные детали о которых нам нужно знать
+      label: Этап обновления
+      description: Для updater укажите этап сбоя; для других проблем напишите «не относится»
+      placeholder: Проверка / скачивание / распаковка / замена / перезапуск / откат
+    validations:
+      required: true
+
+  - type: textarea
+    id: support_bundle
+    attributes:
+      label: Отчёт поддержки и дополнительные детали
+      description: На странице «Диагностика» запустите проверку, нажмите «Собрать отчёт» и перетащите ZIP сюда. Архив можно проверить перед отправкой.
+      placeholder: Перетащите zapret-support-*.zip сюда или объясните, почему отчёт собрать не удалось

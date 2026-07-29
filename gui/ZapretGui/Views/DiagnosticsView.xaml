@@ -31,12 +31,24 @@
                            Text="Проверка окружения" />
             </StackPanel>
 
-            <Button x:Name="RunAllButton" Grid.Column="1"
-                    Style="{StaticResource PrimaryButtonStyle}"
-                    Width="132" Height="32" Margin="16,0,0,0"
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                    Content="Проверить всё"
-                    Command="{Binding RunDiagnosticsCommand}" />
+            <Grid Grid.Column="1" Width="132" Height="32" Margin="16,0,0,0"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                <Button x:Name="RunAllButton"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Width="132" Height="32"
+                        Content="Проверить всё"
+                        AutomationProperties.Name="Запустить все проверки"
+                        Click="OnRunDiagnosticsClick"
+                        Command="{Binding RunDiagnosticsCommand}" />
+                <Button x:Name="CancelDiagnosticsButton"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Width="132" Height="32"
+                        Visibility="Collapsed"
+                        Content="Отмена"
+                        AutomationProperties.Name="Отменить диагностику"
+                        ToolTip="Остановить оставшиеся проверки"
+                        Command="{Binding CancelDiagnosticsCommand}" />
+            </Grid>
         </Grid>
 
         <!-- ============ Тело страницы ============
@@ -90,10 +102,12 @@
                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                 <TextBlock x:Name="SummaryTitle"
                                            Style="{StaticResource SectionTitleStyle}"
+                                           AutomationProperties.LiveSetting="Polite"
                                            TextTrimming="CharacterEllipsis"
                                            Text="Всё в порядке" />
                                 <TextBlock x:Name="SummaryCount"
                                            Style="{StaticResource CaptionTextStyle}"
+                                           Foreground="{StaticResource BrushTextSecondary}"
                                            Margin="0,4,0,0"
                                            TextTrimming="CharacterEllipsis"
                                            Text="0 из 14 проверок пройдено" />
@@ -159,10 +173,12 @@
                                Foreground="{StaticResource BrushTextTertiary}"
                                LineHeight="18" LineStackingStrategy="BlockLineHeight"
                                TextWrapping="Wrap" TextAlignment="Center" />
-                    <Button Margin="0,20,0,0" Width="160" Height="36"
+                    <Button x:Name="EmptyRunAllButton"
+                            Margin="0,20,0,0" Width="160" Height="36"
                             HorizontalAlignment="Center"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Content="Проверить всё"
+                            Click="OnRunDiagnosticsClick"
                             Command="{Binding RunDiagnosticsCommand}" />
                 </StackPanel>
 
@@ -195,10 +211,15 @@
                 </StackPanel>
 
                 <TextBlock Style="{StaticResource MicroLabelStyle}" Text="ОБСЛУЖИВАНИЕ" />
+                <TextBlock Margin="0,6,0,0"
+                           Style="{StaticResource CaptionTextStyle}"
+                           Foreground="{StaticResource BrushTextSecondary}"
+                           TextWrapping="Wrap"
+                           Text="Отчёт для поддержки не содержит внешний IP, Telegram secret, полные пути и содержимое пользовательских списков." />
 
-                <!-- WrapPanel, а не StackPanel: на окне 1024 четыре кнопки в строку
+                <!-- WrapPanel, а не StackPanel: на окне 1024 все кнопки в одну строку
                      не помещаются и уезжали за край карточки. -->
-                <WrapPanel Orientation="Horizontal" Margin="0,14,0,-12">
+                <WrapPanel Orientation="Horizontal" Margin="0,14,0,0">
                     <Button Style="{StaticResource SecondaryButtonStyle}"
                             Height="36" Margin="0,0,12,12"
                             Content="Обновить список IP"
@@ -212,10 +233,25 @@
                             Content="Проверить обновления"
                             Command="{Binding CheckUpdatesCommand}" />
                     <Button Style="{StaticResource SecondaryButtonStyle}"
-                            Height="36" Margin="0,0,0,12"
+                            Height="36" Margin="0,0,12,12"
                             Content="Открыть папку zapret"
                             Command="{Binding OpenFolderCommand}" />
+                    <Button x:Name="SupportBundleButton"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="36" Margin="0,0,0,12"
+                            Content="Собрать отчёт"
+                            AutomationProperties.Name="Собрать обезличенный отчёт для поддержки"
+                            ToolTip="Сохранить обезличенный ZIP с диагностикой и журналом"
+                            Click="OnSupportBundleClick" />
                 </WrapPanel>
+
+                <TextBlock x:Name="SupportBundleStatus"
+                           Margin="0,4,0,0"
+                           Visibility="Collapsed"
+                           Style="{StaticResource CaptionTextStyle}"
+                           Foreground="{StaticResource BrushSuccess}"
+                           AutomationProperties.LiveSetting="Polite"
+                           TextWrapping="Wrap" />
             </StackPanel>
         </Border>
     </Grid>

@@ -19,6 +19,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$MaxZipBytes = 512L * 1024 * 1024
+$MaxExtractedBytes = 1L * 1024 * 1024 * 1024
+$MaxArchiveEntries = 10000
+$MaxManagedFiles = $MaxArchiveEntries - 1
 
 function Resolve-ExistingDirectory {
     param(
@@ -45,6 +49,19 @@ function Assert-SafeVersion {
 
     if ($Value -notmatch '^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$') {
         throw "$Label contains characters that are unsafe for release names: $Value"
+    }
+}
+
+function Assert-NumericVersion {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Value,
+        [Parameter(Mandatory)]
+        [string]$Label
+    )
+
+    if ($Value -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+        throw "$Label must use the numeric x.y.z format: $Value"
     }
 }
 
@@ -144,13 +161,15 @@ if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
     throw "GUI project is missing: $projectPath"
 }
 [xml]$project = Get-Content -LiteralPath $projectPath -Raw
-$GuiVersion = [string]$project.Project.PropertyGroup.Version |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-    Select-Object -First 1
-if ([string]::IsNullOrWhiteSpace($GuiVersion)) {
-    throw 'The GUI <Version> is missing from ZapretGui.csproj.'
+$versionNodes = @(
+    $project.Project.PropertyGroup.Version |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+if ($versionNodes.Count -ne 1) {
+    throw 'ZapretGui.csproj must contain exactly one non-empty <Version>.'
 }
-Assert-SafeVersion -Value $GuiVersion -Label 'GUI version'
+$GuiVersion = [string]$versionNodes[0]
+Assert-NumericVersion -Value $GuiVersion -Label 'GUI version'
 
 $upstreamShort = $UpstreamCommit.Substring(0, 12)
 $tag = "gui-v$GuiVersion-flowseal-v$UpstreamVersion-u$upstreamShort"
@@ -223,6 +242,18 @@ try {
         -Destination (Join-Path $packageRoot 'THIRD_PARTY_NOTICES.md')
 
     $publishedExe = Join-Path $PublishDir 'ZapretGUI.exe'
+    $publishedVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo(
+        $publishedExe
+    )
+    $expectedFileVersion = "$GuiVersion.0"
+    if ($publishedVersion.FileVersion -ne $expectedFileVersion) {
+        throw "Published EXE version is $($publishedVersion.FileVersion); expected $expectedFileVersion."
+    }
+    $productPattern = '^' + [regex]::Escape($GuiVersion) + '(?:\+[0-9a-fA-F]{40})?$'
+    if ($publishedVersion.ProductVersion -notmatch $productPattern) {
+        throw "Published EXE product version is $($publishedVersion.ProductVersion); expected $GuiVersion."
+    }
+
     Copy-RequiredFile -Source $publishedExe -Destination $packageRoot
     Copy-RequiredFile -Source $publishedExe -Destination $releaseExePath
 
@@ -285,6 +316,9 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
         Get-ChildItem -LiteralPath $packageRoot -Recurse -File |
             Sort-Object -Property FullName
     )
+    if ($managedFiles.Count -gt $MaxManagedFiles) {
+        throw "Portable manifest contains $($managedFiles.Count) files; maximum is $MaxManagedFiles."
+    }
     $managedEntries = @(
         foreach ($file in $managedFiles) {
             [ordered]@{
@@ -321,6 +355,15 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
     )
     if ($sourceFiles.Count -eq 0) {
         throw 'The portable package is empty.'
+    }
+    if ($sourceFiles.Count -gt $MaxArchiveEntries) {
+        throw "Portable package contains $($sourceFiles.Count) files; maximum is $MaxArchiveEntries."
+    }
+    $extractedBytes = [long](
+        ($sourceFiles | Measure-Object -Property Length -Sum).Sum
+    )
+    if ($extractedBytes -gt $MaxExtractedBytes) {
+        throw "Portable package expands to $extractedBytes bytes; maximum is $MaxExtractedBytes."
     }
     if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $updateManifestName) -PathType Leaf)) {
         throw "Portable update manifest is missing: $updateManifestName"
@@ -383,6 +426,10 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
     }
     finally {
         $zipStream.Dispose()
+    }
+    $zipBytes = (Get-Item -LiteralPath $zipPath).Length
+    if ($zipBytes -gt $MaxZipBytes) {
+        throw "Portable ZIP is $zipBytes bytes; maximum is $MaxZipBytes."
     }
 
     $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
@@ -454,6 +501,9 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
 - Проверенное обновление portable-сборки с резервной копией и автоматическим откатом.
 - Переключение работающей стратегии без ручной остановки; неудачный профиль откатывается.
 - Защита несохранённых пользовательских списков при закрытии редактора.
+- Отменяемая диагностика отличает исправную систему от проверки, которую не удалось выполнить.
+- Обезличенный ZIP-отчёт для поддержки без внешнего IP, секретов, полных путей и содержимого списков.
+- Строгая единая версия GUI и автоматические проверки updater, стратегий и portable-пакета.
 
 ### Состав сборки
 
