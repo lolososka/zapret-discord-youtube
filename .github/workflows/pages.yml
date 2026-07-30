@@ -69,6 +69,35 @@ jobs:
             assets: [.assets[] | {name, size, browser_download_url}]
           }' "$response" > site/release.json
 
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const htmlPath = "site/index.html";
+          const startMarker = "  <!-- RELEASE_DATA_START -->";
+          const endMarker = "  <!-- RELEASE_DATA_END -->";
+          const pattern = /  <!-- RELEASE_DATA_START -->[\s\S]*?  <!-- RELEASE_DATA_END -->/;
+          const html = fs.readFileSync(htmlPath, "utf8");
+          const release = JSON.parse(fs.readFileSync("site/release.json", "utf8"));
+          const safeJson = JSON.stringify(release, null, 2)
+            .replaceAll("<", "\\u003c")
+            .split("\n")
+            .map((line) => `  ${line}`)
+            .join("\n");
+          const block = [
+            startMarker,
+            '  <script type="application/json" id="release-data">',
+            safeJson,
+            "  </script>",
+            endMarker
+          ].join("\n");
+
+          if (!pattern.test(html)) {
+            throw new Error("Release metadata markers are missing from site/index.html");
+          }
+
+          fs.writeFileSync(htmlPath, html.replace(pattern, block));
+          NODE
+
       - name: Validate static site
         shell: bash
         run: |
