@@ -192,5 +192,14 @@
     }
   };
 
+  const embeddedRelease = document.querySelector("#release-data");
+  if (embeddedRelease) {
+    try {
+      applyRelease(JSON.parse(embeddedRelease.textContent));
+    } catch {
+      // The visible fallback stays usable if embedded metadata is malformed.
+    }
+  }
+
   loadLatestRelease();
 })();
