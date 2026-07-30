@@ -4,6 +4,7 @@
   const repository = "lolososka/zapret-discord-youtube";
   const releasePage = `https://github.com/${repository}/releases/latest`;
   const releaseApi = `https://api.github.com/repos/${repository}/releases/latest`;
+  const releaseSnapshot = "./release.json";
 
   const header = document.querySelector("[data-header]");
   const menu = document.querySelector("[data-menu]");
@@ -159,6 +160,15 @@
   };
 
   const loadLatestRelease = async () => {
+    try {
+      const snapshotResponse = await fetch(releaseSnapshot, { cache: "no-store" });
+      if (snapshotResponse.ok) {
+        applyRelease(await snapshotResponse.json());
+      }
+    } catch {
+      // The hard-coded release remains a complete fallback for local/offline use.
+    }
+
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 7000);
 
@@ -176,7 +186,7 @@
 
       applyRelease(await response.json());
     } catch {
-      // The page contains a complete fallback release and remains usable offline.
+      // Some privacy tools block api.github.com; the local snapshot is used in that case.
     } finally {
       window.clearTimeout(timeout);
     }
