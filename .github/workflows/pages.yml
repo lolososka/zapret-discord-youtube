@@ -1,0 +1,93 @@
+name: Deploy website to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Prepare static site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Validate static site
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            site/index.html
+            site/styles.css
+            site/app.js
+            site/404.html
+            site/robots.txt
+            site/sitemap.xml
+            site/assets/dashboard.png
+            site/assets/user-lists.png
+            site/assets/favicon.ico
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "$file is missing or empty." >&2
+              exit 1
+            fi
+          done
+
+          if find site -type l -print -quit | grep -q .; then
+            echo "Symbolic links are not allowed in the Pages artifact." >&2
+            exit 1
+          fi
+
+          node --check site/app.js
+          grep -Fq './styles.css' site/index.html
+          grep -Fq './app.js' site/index.html
+
+          echo "Pages base path: ${{ steps.pages.outputs.base_path }}"
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
