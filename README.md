@@ -15,6 +15,7 @@
 > Flowseal не связан с этой оболочкой и не одобрял её как официальную сборку.
 > Исходники и инструкция находятся в [`gui/`](./gui/README.md).
 > Готовая portable-сборка: [последний автоматический релиз](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
+> Сайт проекта: [lolososka.github.io/zapret-discord-youtube](https://lolososka.github.io/zapret-discord-youtube/).
 >
 > [![Sync Flowseal upstream](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml)
 > [![GUI CI](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/gui-ci.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/gui-ci.yml)
@@ -31,7 +32,9 @@
 >
 > ### ФЕЙКИ
 > Я не веду никакие другие страницы/группы в телеграм/ютуб каналы  
-> Если вы наткнулись на что-то вне этой страницы гитхаба, что распространяется от моего лица - **ФЕЙК**.
+> Официальные адреса проекта: [репозиторий GitHub](https://github.com/lolososka/zapret-discord-youtube)
+> и [сайт на GitHub Pages](https://lolososka.github.io/zapret-discord-youtube/). Всё остальное,
+> что распространяется от моего лица, — **ФЕЙК**.
 
 > [!WARNING]
 >

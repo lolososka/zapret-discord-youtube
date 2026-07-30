@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#05070a">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Zapret Control Center — неофициальная графическая оболочка для Flowseal/zapret-discord-youtube: стратегии, автоподбор, диагностика и безопасные обновления.">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:site_name" content="Zapret Control Center">
+  <meta property="og:title" content="Zapret Control Center">
+  <meta property="og:description" content="Управление Flowseal/zapret-discord-youtube из одного аккуратного интерфейса для Windows.">
+  <meta property="og:url" content="https://lolososka.github.io/zapret-discord-youtube/">
+  <link rel="canonical" href="https://lolososka.github.io/zapret-discord-youtube/">
+  <link rel="icon" href="./assets/favicon.ico" sizes="any">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Zapret Control Center — неофициальный GUI для Flowseal</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Zapret Control Center",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Windows 10, Windows 11",
+    "softwareVersion": "1.12.0",
+    "description": "Неофициальная графическая оболочка для Flowseal/zapret-discord-youtube.",
+    "downloadUrl": "https://github.com/lolososka/zapret-discord-youtube/releases/latest",
+    "codeRepository": "https://github.com/lolososka/zapret-discord-youtube",
+    "license": "https://opensource.org/license/mit"
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержанию</a>
+
+  <div class="ambient ambient--top" aria-hidden="true"></div>
+  <div class="ambient ambient--bottom" aria-hidden="true"></div>
+  <div class="dither" aria-hidden="true"></div>
+
+  <header class="site-header" data-header>
+    <div class="shell header-inner">
+      <a class="brand" href="#top" aria-label="Zapret Control Center — наверх">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">ZAPRET</span>
+        <span class="brand-product">CONTROL CENTER</span>
+      </a>
+
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-menu-toggle>
+        <span class="sr-only">Открыть меню</span>
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="Основная навигация" data-menu>
+        <a href="#features">Возможности</a>
+        <a href="#safety">Безопасность</a>
+        <a href="#start">Начало работы</a>
+        <a href="#faq">FAQ</a>
+        <a class="nav-download" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+          Скачать
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" id="top">
+      <div class="hero-copy">
+        <div class="eyebrow">
+          <span class="status-dot" aria-hidden="true"></span>
+          НЕОФИЦИАЛЬНЫЙ COMMUNITY FORK · WINDOWS X64
+        </div>
+        <h1>Запрет —<br><span>под контролем.</span></h1>
+        <p class="hero-lead">
+          Zapret Control Center превращает набор стратегий Flowseal в понятную
+          Windows-программу: запуск, смена профиля, автоподбор, диагностика и
+          обновления находятся в одном месте.
+        </p>
+
+        <div class="hero-actions">
+          <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+            <span>Скачать portable ZIP</span>
+            <span class="button-arrow" aria-hidden="true">↓</span>
+          </a>
+          <a class="button button--quiet" href="https://github.com/lolososka/zapret-discord-youtube" target="_blank" rel="noreferrer">
+            Исходники на GitHub
+            <span class="button-arrow" aria-hidden="true">↗</span>
+          </a>
+        </div>
+
+        <div class="release-readout" aria-live="polite">
+          <div>
+            <span class="micro-label">GUI</span>
+            <strong data-gui-version>1.12.0</strong>
+          </div>
+          <div>
+            <span class="micro-label">FLOWSEAL</span>
+            <strong data-flowseal-version>1.10.0</strong>
+          </div>
+          <div>
+            <span class="micro-label">СБОРКА</span>
+            <strong>WIN-X64</strong>
+          </div>
+          <div>
+            <span class="micro-label">РАЗМЕР</span>
+            <strong data-download-size>≈ 60 МБ</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-instrument" role="group" aria-label="Интерфейс Zapret Control Center">
+        <div class="instrument-topline">
+          <span><i class="signal-light"></i> ОБХОД АКТИВЕН</span>
+          <span class="mono" data-release-state>RELEASE VERIFIED</span>
+        </div>
+        <div class="screenshot-window">
+          <div class="screenshot-crop">
+            <img src="./assets/dashboard.png" alt="Панель Zapret Control Center с выбранной стратегией, силовым диском и показателями трафика" width="1180" height="760">
+          </div>
+        </div>
+        <div class="instrument-footer">
+          <span>SHA-256</span>
+          <span>АВТООБНОВЛЕНИЕ</span>
+          <span>ОТКАТ</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="signal-strip" aria-label="Ключевые свойства">
+      <div class="shell signal-grid">
+        <div>
+          <span class="signal-index">01</span>
+          <p><strong>Один запуск</strong><br>Без ручной работы с BAT-файлами</p>
+        </div>
+        <div>
+          <span class="signal-index">02</span>
+          <p><strong>Любая стратегия</strong><br>Все профили Flowseal под рукой</p>
+        </div>
+        <div>
+          <span class="signal-index">03</span>
+          <p><strong>Проверенный релиз</strong><br>ZIP, EXE и контрольные суммы</p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="attribution-band" aria-label="Происхождение проекта">
+      <div class="shell attribution-band__inner">
+        <span class="attribution-band__label">НЕЗАВИСИМЫЙ ПРОЕКТ</span>
+        <p>
+          Zapret Control Center не связан с Flowseal и не является одобренной им официальной сборкой.
+          Стратегии, списки и <code>service.bat</code> приходят из
+          <a href="https://github.com/Flowseal/zapret-discord-youtube">Flowseal/zapret-discord-youtube</a>,
+          а <code>winws</code> — из <a href="https://github.com/bol-van/zapret">bol-van/zapret</a>.
+          <a href="https://github.com/Flowseal/tg-ws-proxy">TgWsProxy</a> — отдельная утилита и в сборку не входит.
+        </p>
+      </div>
+    </aside>
+
+    <section class="section shell" id="features">
+      <header class="section-heading">
+        <span class="kicker">ВОЗМОЖНОСТИ / 01</span>
+        <h2>Не обёртка ради обёртки.<br>Нормальная панель управления.</h2>
+        <p>
+          Интерфейс не прячет возможности оригинального проекта, а собирает их
+          в предсказуемый рабочий процесс.
+        </p>
+      </header>
+
+      <div class="feature-ledger">
+        <article class="feature-row">
+          <div class="feature-number">01</div>
+          <div class="feature-title">
+            <span class="feature-icon feature-icon--power" aria-hidden="true"></span>
+            <h3>Запуск и состояние</h3>
+          </div>
+          <p>
+            Большой силовой диск запускает обход. Рядом всегда видны активная
+            стратегия, процесс, служба, скорость интерфейса и журнал событий.
+          </p>
+          <span class="feature-tag">LIVE STATUS</span>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-number">02</div>
+          <div class="feature-title">
+            <span class="feature-icon feature-icon--layers" aria-hidden="true"></span>
+            <h3>Стратегии без рутины</h3>
+          </div>
+          <p>
+            Программа читает штатные стратегии Flowseal, умеет проверять их по
+            очереди и менять работающий профиль без ручной остановки.
+          </p>
+          <span class="feature-tag">SAFE SWITCH</span>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-number">03</div>
+          <div class="feature-title">
+            <span class="feature-icon feature-icon--pulse" aria-hidden="true"></span>
+            <h3>Диагностика по фактам</h3>
+          </div>
+          <p>
+            Проверки различают исправное состояние, найденную проблему и
+            ситуацию, когда ответ получить не удалось. Долгую проверку можно отменить.
+          </p>
+          <span class="feature-tag">NO FALSE OK</span>
+        </article>
+
+        <article class="feature-row">
+          <div class="feature-number">04</div>
+          <div class="feature-title">
+            <span class="feature-icon feature-icon--list" aria-hidden="true"></span>
+            <h3>Свои сайты и исключения</h3>
+          </div>
+          <p>
+            Домены и IP добавляются через редактор. Несохранённые изменения
+            защищены от случайного закрытия, служебные списки остаются нетронутыми.
+          </p>
+          <span class="feature-tag">USER LISTS</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section--gallery" id="interface">
+      <div class="shell gallery-grid">
+        <div class="gallery-copy">
+          <span class="kicker">ИНТЕРФЕЙС / 02</span>
+          <h2>Инструмент,<br>а не игрушка.</h2>
+          <p>
+            Чёткие состояния, один акцентный цвет и числа моноширинным шрифтом.
+            Цвет можно поменять в настройках — структура останется спокойной.
+          </p>
+          <ul class="plain-list">
+            <li>Поддержка светового акцента</li>
+            <li>Клавиатурная навигация</li>
+            <li>Системный трей и журнал</li>
+            <li>Масштабирование Windows</li>
+          </ul>
+        </div>
+
+        <figure class="gallery-card gallery-card--lists">
+          <img src="./assets/user-lists.png" alt="Редактор пользовательских доменов и исключений в Zapret Control Center" width="972" height="716" loading="lazy">
+          <figcaption>
+            <span>СВОИ САЙТЫ</span>
+            <span class="mono">ДОМЕНЫ · IP · ИСКЛЮЧЕНИЯ</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section shell" id="safety">
+      <header class="section-heading section-heading--wide">
+        <span class="kicker">БЕЗОПАСНОСТЬ / 03</span>
+        <h2>Обновление можно<br>доверить автоматике.</h2>
+        <p>
+          Новая версия устанавливается только после нескольких независимых
+          проверок. Пользовательские данные не перезаписываются.
+        </p>
+      </header>
+
+      <div class="verification-line" role="group" aria-label="Процесс безопасного обновления">
+        <div class="verification-step is-active">
+          <span>01</span>
+          <strong>GitHub Release</strong>
+          <small>Точный tag и набор файлов</small>
+        </div>
+        <div class="verification-step">
+          <span>02</span>
+          <strong>SHA-256</strong>
+          <small>Сверка ZIP и EXE</small>
+        </div>
+        <div class="verification-step">
+          <span>03</span>
+          <strong>Резервная копия</strong>
+          <small>Списки и настройки сохранены</small>
+        </div>
+        <div class="verification-step">
+          <span>04</span>
+          <strong>Проверка запуска</strong>
+          <small>Неудача включает откат</small>
+        </div>
+      </div>
+
+      <div class="safety-panels">
+        <article>
+          <span class="panel-status panel-status--ok">ПРОВЕРЕНО CI</span>
+          <h3>Релиз собирается после тестов</h3>
+          <p>
+            Перед публикацией проверяются версия, updater, стратегии,
+            манифест пакета, приватность отчёта и содержимое portable ZIP.
+          </p>
+        </article>
+        <article>
+          <span class="panel-status">PRIVACY FIRST</span>
+          <h3>Отчёт поддержки без лишних данных</h3>
+          <p>
+            ZIP не включает содержимое пользовательских списков, внешний IP,
+            полные пути и известные секреты. Архив всё равно можно проверить вручную.
+          </p>
+        </article>
+        <article>
+          <span class="panel-status">UPSTREAM 6H</span>
+          <h3>Flowseal синхронизируется отдельно</h3>
+          <p>
+            Изменения upstream проверяются каждые шесть часов. Конфликт
+            останавливает автоматику вместо молчаливой перезаписи форка.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section--start" id="start">
+      <div class="shell start-layout">
+        <header class="section-heading">
+          <span class="kicker">БЫСТРЫЙ СТАРТ / 04</span>
+          <h2>Три шага.<br>Никакой установки.</h2>
+        </header>
+
+        <ol class="start-steps">
+          <li>
+            <span class="step-number">01</span>
+            <div>
+              <h3>Скачайте ZIP</h3>
+              <p>Берите portable-сборку только из Releases этого репозитория.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">02</span>
+            <div>
+              <h3>Распакуйте в новую папку</h3>
+              <p>Для первого запуска не смешивайте файлы с прежней сборкой.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number">03</span>
+            <div>
+              <h3>Запустите ZapretGUI.exe</h3>
+              <p>Нужны Windows x64 и права администратора для работы WinDivert.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="download-panel">
+          <div class="download-dial" aria-hidden="true">
+            <div class="download-dial__ticks"></div>
+            <div class="download-dial__core">↓</div>
+          </div>
+          <div>
+            <span class="micro-label">ПОСЛЕДНИЙ РЕЛИЗ</span>
+            <h3 data-release-title>Zapret Control Center 1.12.0</h3>
+            <p data-release-meta>Windows x64 · Portable ZIP · ≈ 60 МБ</p>
+          </div>
+          <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+            Скачать
+            <span class="button-arrow" aria-hidden="true">↓</span>
+          </a>
+          <a class="checksum-link" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-checksum-link>
+            SHA256SUMS.txt <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell" id="faq">
+      <header class="section-heading">
+        <span class="kicker">ВОПРОСЫ / 05</span>
+        <h2>Коротко о важном.</h2>
+      </header>
+
+      <div class="faq-list">
+        <details>
+          <summary>Это официальный проект Flowseal?</summary>
+          <p>
+            Нет. Это неофициальный community fork. Flowseal предоставляет
+            исходные стратегии и скрипты, но не связан с Zapret Control Center
+            и не одобрял GUI как официальную сборку.
+          </p>
+        </details>
+        <details>
+          <summary>Программа является VPN?</summary>
+          <p>
+            Нет. Она не меняет страну и внешний IP. Zapret модифицирует пакеты,
+            чтобы оборудование DPI не распознало домен; маршрут остаётся у провайдера.
+          </p>
+        </details>
+        <details>
+          <summary>Что скачивать: ZIP или отдельный EXE?</summary>
+          <p>
+            Для первого запуска скачайте portable ZIP и полностью распакуйте его в новую папку.
+            Отдельный EXE предназначен только для ручного обновления уже существующей полной сборки:
+            сам по себе он не содержит стратегии, списки и остальные необходимые файлы.
+          </p>
+        </details>
+        <details>
+          <summary>Сработает ли обход у моего провайдера?</summary>
+          <p>
+            Гарантировать это нельзя: оборудование и правила фильтрации отличаются. Начните с
+            рекомендованной стратегии, затем запустите автоподбор или попробуйте другие профили.
+          </p>
+        </details>
+        <details>
+          <summary>Почему антивирус может реагировать?</summary>
+          <p>
+            В сборке используется WinDivert — драйвер перехвата и фильтрации
+            трафика. Некоторые антивирусы относят такие инструменты к RiskTool.
+            Сверяйте SHA-256 и скачивайте файлы только из официального Releases этого форка.
+          </p>
+        </details>
+        <details>
+          <summary>Мои списки сохранятся после обновления?</summary>
+          <p>
+            Portable updater сохраняет пользовательские списки, настройки,
+            флаги и активные fake-пакеты. Перед заменой создаётся резервная копия.
+          </p>
+        </details>
+        <details>
+          <summary>Что приложить к сообщению об ошибке?</summary>
+          <p>
+            В разделе «Диагностика» запустите проверку и соберите ZIP-отчёт.
+            Просмотрите его перед публикацией, затем приложите к Issue вместе
+            с версией GUI и шагами воспроизведения.
+          </p>
+        </details>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="shell final-cta__inner">
+        <div>
+          <span class="kicker">ГОТОВО К РАБОТЕ</span>
+          <h2>Стратегия выбрана.<br>Осталось нажать кнопку.</h2>
+        </div>
+        <div class="final-cta__actions">
+          <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+            Скачать portable ZIP
+            <span class="button-arrow" aria-hidden="true">↓</span>
+          </a>
+          <span class="download-note" data-published-note>Последний проверенный релиз</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <a class="brand brand--footer" href="#top">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">ZAPRET</span>
+        </a>
+        <p>Неофициальный community fork с открытым исходным кодом.</p>
+      </div>
+      <div>
+        <span class="micro-label">ПРОЕКТ</span>
+        <a href="https://github.com/lolososka/zapret-discord-youtube">GitHub</a>
+        <a href="https://github.com/lolososka/zapret-discord-youtube/releases">Releases</a>
+        <a href="https://github.com/lolososka/zapret-discord-youtube/issues">Сообщить о проблеме</a>
+      </div>
+      <div>
+        <span class="micro-label">ОСНОВА</span>
+        <a href="https://github.com/Flowseal/zapret-discord-youtube">Flowseal</a>
+        <a href="https://github.com/bol-van/zapret">bol-van/zapret</a>
+        <a href="https://github.com/lolososka/zapret-discord-youtube/blob/main/LICENSE.txt">MIT License</a>
+        <small>У сторонних компонентов могут быть собственные лицензии.</small>
+      </div>
+      <div class="footer-state">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>САЙТ БЕЗ АНАЛИТИКИ<br>И СТОРОННИХ COOKIE</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
