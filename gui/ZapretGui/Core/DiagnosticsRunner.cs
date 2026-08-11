@@ -526,10 +526,14 @@ public static class DiagnosticsRunner
             foreach (var raw in File.ReadLines(path))
             {
                 ct.ThrowIfCancellationRequested();
-                var line = raw.Trim();
-                if (line.Length == 0 || line.StartsWith('#')) continue;
-                if (line.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) ||
-                    line.Contains("youtu.be", StringComparison.OrdinalIgnoreCase))
+                // Комментарий может содержать пример youtube.com, а имя вроде
+                // notyoutube.com вообще не относится к YouTube. Разбираем именно
+                // hostname-поля hosts, а не ищем подстроку во всей строке.
+                var line = raw.Split('#', 2)[0].Trim();
+                if (line.Length == 0) continue;
+
+                var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                if (fields.Skip(1).Any(IsYouTubeHost))
                     hits.Add(line);
             }
         }
@@ -555,6 +559,15 @@ public static class DiagnosticsRunner
             r.Status = CheckStatus.Ok;
             r.Detail = "Записей для YouTube в файле hosts нет.";
         }
+    }
+
+    private static bool IsYouTubeHost(string value)
+    {
+        var host = value.Trim().TrimEnd('.');
+        return host.Equals("youtube.com", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".youtube.com", StringComparison.OrdinalIgnoreCase) ||
+               host.Equals("youtu.be", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".youtu.be", StringComparison.OrdinalIgnoreCase);
     }
 
     // ── 13. Зависшая служба WinDivert ─────────────────────────────────────────

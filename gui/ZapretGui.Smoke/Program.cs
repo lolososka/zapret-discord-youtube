@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -32,6 +33,8 @@ internal static class Program
             {
                 RunVersionPolicySmoke();
                 RunStrategyParserSmoke();
+                await RunConnectivityPolicySmokeAsync();
+                RunStrategyHistorySmoke();
                 await RunManifestSmokeAsync();
                 await RunSupportBundleSmokeAsync();
             }
@@ -190,6 +193,286 @@ internal static class Program
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static async Task RunConnectivityPolicySmokeAsync()
+    {
+        Check(
+            ConnectivityTester.ScoredSiteCount == 4,
+            "Only the core Discord and YouTube probes may affect strategy scoring.");
+        Check(
+            ConnectivityTester.ScoredSites.All(site => site.CountsTowardStrategyScore),
+            "The strategy batch must contain only scored targets.");
+        Check(
+            ConnectivityTester.Sites.Count(site => !site.CountsTowardStrategyScore) == 2,
+            "The regional CDN and general-internet control must stay diagnostic-only.");
+
+        foreach (var status in new[]
+                 {
+                     HttpStatusCode.OK,
+                     HttpStatusCode.NoContent,
+                     HttpStatusCode.Redirect,
+                     HttpStatusCode.Forbidden,
+                     HttpStatusCode.NotFound,
+                     HttpStatusCode.TooManyRequests,
+                 })
+        {
+            Check(
+                ConnectivityTester.IsUsableStatus(status),
+                $"A reachable target response must be accepted: {(int)status}.");
+        }
+
+        foreach (var status in new[]
+                 {
+                     HttpStatusCode.ProxyAuthenticationRequired,
+                     (HttpStatusCode)451,
+                     HttpStatusCode.InternalServerError,
+                     HttpStatusCode.ServiceUnavailable,
+                     (HttpStatusCode)511,
+                 })
+        {
+            Check(
+                !ConnectivityTester.IsUsableStatus(status),
+                $"A blocked/intercepted/unavailable response must be rejected: {(int)status}.");
+        }
+
+        var ok = new ProbeResult(ConnectivityTester.Sites[0], true, 42, null);
+        var failed = new ProbeResult(ConnectivityTester.Sites[0], false, 6000, "timeout");
+        Check(ok.ResultText == "42 мс", "A successful probe must show its latency.");
+        Check(failed.ResultText == "не открыт", "A failed probe must not present timeout as useful latency.");
+
+        var invalid = await ConnectivityTester.ProbeAsync(
+            new SiteProbe("invalid", "http://example.test/"));
+        Check(!invalid.Ok && invalid.Error?.Contains("HTTPS", StringComparison.Ordinal) == true,
+            "A non-HTTPS probe must fail closed before network access.");
+
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await ExpectThrowsAsync<OperationCanceledException>(
+            async () => await ConnectivityTester.ProbeAllAsync(ConnectivityTester.Sites, cancellation.Token),
+            "Caller cancellation must not be reported as a blocked website.");
+    }
+
+    private static void RunStrategyHistorySmoke()
+    {
+        var started = DateTime.UtcNow.AddMinutes(-5);
+        int probes = ConnectivityTester.ScoredSiteCount;
+
+        static Strategy MakeStrategy(string name, string raw, string root = @"C:\zapret") => new()
+        {
+            Name = name,
+            DisplayName = name,
+            FileName = name + ".bat",
+            FilePath = Path.Combine(root, name + ".bat"),
+            RawCommandLine = raw,
+        };
+
+        static StrategyTestResult MakeResult(
+            Strategy strategy,
+            DateTime tested,
+            int ok,
+            int total,
+            int latency,
+            string detail) => new()
+        {
+            StrategyName = strategy.Name,
+            StrategyFingerprint = StrategyTestHistory.Fingerprint(strategy),
+            TestedAtUtc = tested,
+            OkCount = ok,
+            TotalCount = total,
+            AverageLatencyMs = latency,
+            Detail = detail,
+        };
+
+        var general = MakeStrategy("general", "--filter-tcp=443 --dpi-desync=fake");
+        var alt = MakeStrategy("general (ALT)", "--filter-tcp=443 --dpi-desync=multisplit");
+        var failed = MakeStrategy("general (ALT2)", "--filter-tcp=443 --dpi-desync=multidisorder");
+        var complete = new StrategyTestRun
+        {
+            SchemaVersion = StrategyTestHistory.CurrentSchemaVersion,
+            StartedAtUtc = started,
+            FinishedAtUtc = started.AddMinutes(2),
+            Mode = GameFilterMode.Tcp,
+            Status = StrategyTestRunStatus.Completed,
+            TotalStrategies = 3,
+            ProbeSuiteFingerprint = StrategyTestHistory.CurrentProbeSuiteFingerprint(),
+            Results =
+            {
+                MakeResult(general, started.AddSeconds(20), probes - 2, probes, 40, "Часть целей открылась"),
+                MakeResult(alt, started.AddSeconds(40), probes - 2, probes, 20, "Кавычки \"ok\"\nи кириллица"),
+                MakeResult(failed, started.AddSeconds(60), 0, probes, 0, "Ничего не открылось"),
+            },
+        };
+
+        var preferences = new StrategyPreferences
+        {
+            Favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "general" },
+            LastWorking = "general",
+            SuccessSeconds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["general"] = 90,
+            },
+            LastTestRun = complete,
+        };
+
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "strategies.json");
+            preferences.Save(path);
+            preferences.Save(path); // повторная запись упражняет атомарную замену существующего файла
+            var loaded = StrategyPreferences.Load(path);
+            Check(loaded.LastTestRun is not null, "A valid strategy test run must round-trip.");
+            Check(
+                loaded.LastTestRun!.Status == StrategyTestRunStatus.Completed &&
+                loaded.LastTestRun.Mode == GameFilterMode.Tcp &&
+                loaded.LastTestRun.Results.Count == 3,
+                "Run status, mode and results must survive persistence.");
+            Check(
+                loaded.LastTestRun.Results[1].Detail.Contains("кириллица", StringComparison.Ordinal),
+                "Unicode and newlines in a short result detail must survive persistence.");
+
+            var json = File.ReadAllText(path);
+            Check(
+                !json.Contains(nameof(Strategy.FilePath), StringComparison.Ordinal) &&
+                !json.Contains(nameof(Strategy.RawCommandLine), StringComparison.Ordinal) &&
+                !json.Contains(nameof(Strategy.DisplayName), StringComparison.Ordinal),
+                "Strategy history must not persist local paths or full commands.");
+            Check(
+                !Directory.EnumerateFiles(directory, "strategies.json.*.tmp").Any(),
+                "Atomic strategy preference save must clean its temporary file.");
+
+            var movedGeneral = MakeStrategy(
+                "GENERAL",
+                general.RawCommandLine,
+                @"D:\portable\zapret");
+            var trials = loaded.CreateCurrentTrials(new[] { movedGeneral, alt, failed });
+            Check(
+                trials.Count == 3 && ReferenceEquals(trials[0].Strategy, movedGeneral),
+                "History must rebind case-insensitively to the current Strategy object, independent of its path.");
+
+            var changedGeneral = MakeStrategy("general", general.RawCommandLine + " --changed");
+            trials = loaded.CreateCurrentTrials(new[] { changedGeneral, alt, failed });
+            Check(
+                trials.Count == 2 && trials.All(item => !ReferenceEquals(item.Strategy, changedGeneral)),
+                "A changed command fingerprint must invalidate only that strategy result.");
+
+            StrategyTester.Instance.RestoreHistory(
+                loaded.CreateCurrentTrials(new[] { general, alt, failed }),
+                loaded.LastTestRun);
+            Check(
+                ReferenceEquals(StrategyTester.Instance.Best?.Strategy, alt),
+                "Restored best result must prefer the lower latency when scores tie.");
+            Check(
+                StrategyTester.Instance.Progress == 1 &&
+                StrategyTester.Instance.StatusText.Contains("Последний автоподбор", StringComparison.Ordinal),
+                "A completed run must restore completed progress and a dated status.");
+            StrategyTester.Instance.RestoreHistory(Array.Empty<StrategyTrial>(), null);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+
+        var legacy = StrategyPreferences.FromJson(
+            """
+            {
+              "Favorites": ["general"],
+              "LastWorking": "general",
+              "SuccessSeconds": { "general": 61 }
+            }
+            """);
+        Check(
+            legacy.Favorites.Contains("GENERAL") &&
+            legacy.SuccessSeconds["GENERAL"] == 61 &&
+            legacy.LastTestRun is null,
+            "Legacy strategies.json must load without a history migration.");
+
+        var damagedHistory = StrategyPreferences.FromJson(
+            """
+            {
+              "Favorites": ["general"],
+              "SuccessSeconds": { "general": 61 },
+              "LastTestRun": "damaged"
+            }
+            """);
+        Check(
+            damagedHistory.Favorites.Contains("general") &&
+            damagedHistory.SuccessSeconds["general"] == 61 &&
+            damagedHistory.LastTestRun is null,
+            "A malformed history field must not erase favorites or worked time.");
+
+        var interrupted = new StrategyTestRun
+        {
+            SchemaVersion = StrategyTestHistory.CurrentSchemaVersion,
+            StartedAtUtc = started,
+            Mode = GameFilterMode.All,
+            Status = StrategyTestRunStatus.Running,
+            TotalStrategies = 2,
+            ProbeSuiteFingerprint = StrategyTestHistory.CurrentProbeSuiteFingerprint(),
+            Results = { MakeResult(general, started.AddSeconds(20), probes, probes, 25, "ok") },
+        };
+        var normalized = StrategyTestHistory.Normalize(interrupted);
+        Check(
+            normalized?.Status == StrategyTestRunStatus.Interrupted,
+            "A run left Running by a crashed process must restore as Interrupted.");
+
+        interrupted.Status = StrategyTestRunStatus.Completed;
+        normalized = StrategyTestHistory.Normalize(interrupted);
+        Check(
+            normalized?.Status == StrategyTestRunStatus.Interrupted,
+            "An incomplete run must never normalize as Completed.");
+
+        var missingSchema = new StrategyTestRun
+        {
+            StartedAtUtc = started,
+            FinishedAtUtc = started.AddMinutes(1),
+            Mode = GameFilterMode.All,
+            Status = StrategyTestRunStatus.Completed,
+            TotalStrategies = 1,
+            ProbeSuiteFingerprint = StrategyTestHistory.CurrentProbeSuiteFingerprint(),
+            Results = { MakeResult(general, started.AddSeconds(20), probes, probes, 25, "ok") },
+        };
+        Check(
+            StrategyTestHistory.Normalize(missingSchema) is null,
+            "A history snapshot without an explicit schema version must be rejected.");
+
+        missingSchema.SchemaVersion = StrategyTestHistory.CurrentSchemaVersion;
+        missingSchema.Mode = (GameFilterMode)999;
+        Check(
+            StrategyTestHistory.Normalize(missingSchema) is null,
+            "An unknown game-filter mode must invalidate only the history snapshot.");
+
+        var corruptCancelled = new StrategyTestRun
+        {
+            SchemaVersion = StrategyTestHistory.CurrentSchemaVersion,
+            StartedAtUtc = started,
+            FinishedAtUtc = started.AddMinutes(1),
+            Mode = GameFilterMode.All,
+            Status = StrategyTestRunStatus.Cancelled,
+            TotalStrategies = 1,
+            ProbeSuiteFingerprint = StrategyTestHistory.CurrentProbeSuiteFingerprint(),
+            Results =
+            {
+                MakeResult(general, started.AddSeconds(20), probes, probes, 25, "ok"),
+                MakeResult(alt, started.AddSeconds(30), probes, probes, 30, "ok"),
+            },
+        };
+        Check(
+            StrategyTestHistory.Normalize(corruptCancelled)?.Status == StrategyTestRunStatus.Interrupted,
+            "A structurally corrupt cancelled run must restore as Interrupted.");
+
+        corruptCancelled.TotalStrategies = 2;
+        corruptCancelled.Results[1].TotalCount = probes - 1;
+        Check(
+            StrategyTestHistory.Normalize(corruptCancelled)?.Status == StrategyTestRunStatus.Interrupted,
+            "Mixed probe counts must not remain a trusted terminal run.");
+
+        complete.ProbeSuiteFingerprint = new string('A', 64);
+        preferences.LastTestRun = complete;
+        Check(
+            preferences.CreateCurrentTrials(new[] { general, alt, failed }).Count == 0,
+            "A changed probe suite must invalidate the saved ranking.");
     }
 
     private static async Task RunManifestSmokeAsync()

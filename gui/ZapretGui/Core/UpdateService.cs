@@ -240,50 +240,61 @@ public static class UpdateService
 
 }
 
-public sealed record SiteProbe(string Name, string Url);
+public sealed record SiteProbe(
+    string Name,
+    string Url,
+    bool CountsTowardStrategyScore = true);
 
-public sealed record ProbeResult(SiteProbe Site, bool Ok, int LatencyMs, string? Error);
+public sealed record ProbeResult(SiteProbe Site, bool Ok, int LatencyMs, string? Error)
+{
+    public string ResultText => Ok ? $"{LatencyMs} мс" : "не открыт";
+}
 
 /// <summary>
-/// Проверка доступности ресурсов, которые чинит zapret. Любой HTTP-код считается успехом —
-/// нас интересует только то, что TCP+TLS соединение установилось.
+/// Проверка доступности ресурсов, которые чинит zapret. Каждая серия использует новые
+/// прямые соединения: результат одной стратегии не попадает в следующую из HTTP-пула.
 /// </summary>
 public static class ConnectivityTester
 {
-    private static readonly HttpClient Http = CreateClient();
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(6);
+    private const int MaxAttempts = 2;
 
     private static readonly SiteProbe[] SitesArray =
     {
         new("YouTube", "https://www.youtube.com/"),
-        new("YouTube CDN", "https://rr1---sn-4g5e6nlz.googlevideo.com/"),
+        // Конкретный CDN-узел зависит от региона, поэтому он полезен в диагностике,
+        // но не должен сам решать, какая стратегия лучшая.
+        new("YouTube CDN", "https://rr1---sn-4g5e6nlz.googlevideo.com/", false),
         new("Discord API", "https://discord.com/api/v9/gateway"),
         new("Discord CDN", "https://cdn.discordapp.com/"),
         new("Discord Media", "https://media.discordapp.net/"),
-        new("Google", "https://www.google.com/")
+        // Контроль обычного интернета: Google не является целью zapret.
+        new("Google", "https://www.google.com/", false)
     };
 
+    private static readonly SiteProbe[] ScoredSitesArray =
+        SitesArray.Where(site => site.CountsTowardStrategyScore).ToArray();
+
     public static IReadOnlyList<SiteProbe> Sites { get; } = SitesArray;
+    public static IReadOnlyList<SiteProbe> ScoredSites { get; } = ScoredSitesArray;
+    public static int ScoredSiteCount => ScoredSitesArray.Length;
 
     private static HttpClient CreateClient()
     {
-        var handler = new HttpClientHandler
+        var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
-            // При активной блокировке провайдер часто подменяет сертификат; для теста
-            // доступности это не важно — важен сам факт установленного соединения.
-            ServerCertificateCustomValidationCallback = static (_, _, _, _) => true
+            ConnectTimeout = TimeSpan.FromSeconds(4),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+            MaxConnectionsPerServer = 4,
+            UseCookies = false,
+            // Проверяем именно прямой маршрут zapret, а не системный VPN/HTTP-прокси.
+            UseProxy = false
         };
 
-        HttpClient client;
-        try
-        {
-            client = new HttpClient(handler, disposeHandler: true);
-        }
-        catch
-        {
-            client = new HttpClient();
-        }
+        var client = new HttpClient(handler, disposeHandler: true);
 
         client.Timeout = Timeout.InfiniteTimeSpan; // таймаут задаётся через CancellationTokenSource
         try
@@ -300,57 +311,144 @@ public static class ConnectivityTester
         return client;
     }
 
+    /// <summary>
+    /// Одна серия проверок с собственной транспортной сессией. Это особенно важно
+    /// при автоподборе: новая стратегия не наследует соединения предыдущей.
+    /// </summary>
+    public static async Task<IReadOnlyList<ProbeResult>> ProbeAllAsync(
+        IReadOnlyList<SiteProbe> sites,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(sites);
+        ct.ThrowIfCancellationRequested();
+
+        using var http = CreateClient();
+        var tasks = sites.Select(site => ProbeAsync(http, site, ct)).ToArray();
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
     public static async Task<ProbeResult> ProbeAsync(SiteProbe site, CancellationToken ct = default)
+    {
+        using var http = CreateClient();
+        return await ProbeAsync(http, site, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<ProbeResult> ProbeAsync(
+        HttpClient http,
+        SiteProbe site,
+        CancellationToken ct)
     {
         if (site is null)
             return new ProbeResult(new SiteProbe("—", string.Empty), false, 0, "Не задан адрес проверки.");
+        if (!Uri.TryCreate(site.Url, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return new ProbeResult(site, false, 0, "Для проверки нужен корректный HTTPS-адрес.");
 
         var sw = Stopwatch.StartNew();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(ProbeTimeout);
 
         try
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(6));
-
-            var head = await TrySendAsync(site.Url, HttpMethod.Head, cts.Token).ConfigureAwait(false);
-            if (head.ok)
+            for (int attempt = 1; attempt <= MaxAttempts; attempt++)
             {
-                sw.Stop();
-                return new ProbeResult(site, true, (int)sw.ElapsedMilliseconds, null);
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, uri)
+                    {
+                        Version = HttpVersion.Version20,
+                        VersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
+                    };
+                    req.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+
+                    // Заголовков достаточно: тело не скачиваем.
+                    using var response = await http.SendAsync(
+                        req,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        timeout.Token).ConfigureAwait(false);
+
+                    sw.Stop();
+                    var error = ResponseError(response.StatusCode);
+                    return new ProbeResult(site, error is null, ElapsedMilliseconds(sw), error);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (attempt < MaxAttempts && IsTransient(ex))
+                {
+                    await Task.Delay(150, timeout.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    sw.Stop();
+                    return new ProbeResult(site, false, ElapsedMilliseconds(sw), Describe(ex));
+                }
             }
 
-            var get = await TrySendAsync(site.Url, HttpMethod.Get, cts.Token).ConfigureAwait(false);
             sw.Stop();
-
-            if (get.ok)
-                return new ProbeResult(site, true, (int)sw.ElapsedMilliseconds, null);
-
-            return new ProbeResult(site, false, (int)sw.ElapsedMilliseconds, get.error ?? head.error ?? "Соединение не установлено.");
+            return new ProbeResult(site, false, ElapsedMilliseconds(sw), "Соединение не установлено.");
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
         {
             sw.Stop();
-            return new ProbeResult(site, false, (int)sw.ElapsedMilliseconds, Describe(ex));
+            return new ProbeResult(site, false, ElapsedMilliseconds(sw), "Сайт не ответил за 6 секунд.");
         }
     }
 
-    private static async Task<(bool ok, string? error)> TrySendAsync(string url, HttpMethod method, CancellationToken ct)
+    /// <summary>HTTP-ответ означает, что сайт действительно пригоден для текущей проверки.</summary>
+    public static bool IsUsableStatus(HttpStatusCode statusCode)
     {
-        try
-        {
-            using var req = new HttpRequestMessage(method, url);
-            // Заголовки ответа достаточно — тело качать незачем.
-            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-
-            // Любой статус = хост достижим.
-            _ = resp.StatusCode;
-            return (true, null);
-        }
-        catch (Exception ex)
-        {
-            return (false, Describe(ex));
-        }
+        int code = (int)statusCode;
+        return code >= 200 && code < 500 &&
+               statusCode != HttpStatusCode.ProxyAuthenticationRequired &&
+               code != 451 &&
+               code != 511;
     }
+
+    private static string? ResponseError(HttpStatusCode statusCode)
+    {
+        if (IsUsableStatus(statusCode))
+            return null;
+
+        return statusCode switch
+        {
+            HttpStatusCode.ProxyAuthenticationRequired => "Системный прокси требует авторизацию (HTTP 407).",
+            _ when (int)statusCode == 451 => "Сайт ответил отказом из-за ограничения доступа (HTTP 451).",
+            _ when (int)statusCode == 511 => "Сеть требует входа через страницу авторизации (HTTP 511).",
+            _ when (int)statusCode >= 500 => $"Сервер временно недоступен (HTTP {(int)statusCode}).",
+            _ => $"Неожиданный ответ сайта (HTTP {(int)statusCode}).",
+        };
+    }
+
+    private static bool IsTransient(Exception ex)
+    {
+        if (ex is System.Security.Authentication.AuthenticationException)
+            return false;
+        if (ex is HttpRequestException request && request.InnerException is not null)
+            return IsTransient(request.InnerException);
+        if (ex is System.Net.Sockets.SocketException socket)
+            return socket.SocketErrorCode is
+                System.Net.Sockets.SocketError.HostNotFound or
+                System.Net.Sockets.SocketError.TryAgain or
+                System.Net.Sockets.SocketError.ConnectionAborted or
+                System.Net.Sockets.SocketError.ConnectionRefused or
+                System.Net.Sockets.SocketError.ConnectionReset or
+                System.Net.Sockets.SocketError.NetworkDown or
+                System.Net.Sockets.SocketError.NetworkUnreachable;
+        return ex is HttpRequestException or IOException;
+    }
+
+    private static int ElapsedMilliseconds(Stopwatch stopwatch)
+        => (int)Math.Clamp(stopwatch.ElapsedMilliseconds, 0, int.MaxValue);
 
     private static string Describe(Exception ex)
     {
@@ -362,19 +460,19 @@ public static class ConnectivityTester
         {
             case TaskCanceledException:
             case OperationCanceledException:
-                return "Превышено время ожидания (6 с) — соединение блокируется.";
+                return "Сайт не ответил за 6 секунд.";
             case System.Net.Sockets.SocketException se:
                 return se.SocketErrorCode switch
                 {
                     System.Net.Sockets.SocketError.HostNotFound => "DNS не разрешает имя узла.",
                     System.Net.Sockets.SocketError.ConnectionRefused => "Соединение отклонено узлом.",
-                    System.Net.Sockets.SocketError.ConnectionReset => "Соединение сброшено — типичный признак DPI.",
+                    System.Net.Sockets.SocketError.ConnectionReset => "Соединение было сброшено удалённой стороной.",
                     System.Net.Sockets.SocketError.TimedOut => "Тайм-аут TCP-соединения.",
                     System.Net.Sockets.SocketError.NetworkUnreachable => "Сеть недоступна.",
-                    _ => "Сетевая ошибка: " + se.SocketErrorCode
+                    _ => "Сетевая ошибка (код " + (int)se.SocketErrorCode + ")."
                 };
             case System.Security.Authentication.AuthenticationException:
-                return "Ошибка TLS-рукопожатия — вероятно, вмешательство DPI.";
+                return "Не удалось подтвердить TLS-сертификат сайта.";
             case IOException:
                 return "Разрыв соединения при передаче данных.";
         }
@@ -386,7 +484,6 @@ public static class ConnectivityTester
             return "Нет соединения с узлом.";
         }
 
-        var msg = e.Message;
-        return string.IsNullOrWhiteSpace(msg) ? "Неизвестная сетевая ошибка." : msg;
+        return "Неизвестная сетевая ошибка.";
     }
 }
