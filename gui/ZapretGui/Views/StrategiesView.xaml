@@ -66,6 +66,29 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Последний сетевой тест: зелёный — открылись все цели, жёлтый — часть,
+             нейтральный — стратегия не открыла ни одной цели. -->
+        <Style x:Key="AutoPickResultChipStyle" TargetType="Border"
+               BasedOn="{StaticResource TagChipStyle}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="BorderBrush" Value="{StaticResource BrushWarning}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource BrushWarning}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasAutoPickResult}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AutoPickPassedAny}" Value="False">
+                    <Setter Property="BorderBrush" Value="{StaticResource BrushHairlineStrong}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource BrushTextTertiary}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AutoPickPassedAll}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource BrushSuccess}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource BrushSuccess}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- ================= Строка списка ================= -->
 
         <DataTemplate x:Key="StrategyRowTemplate" DataType="{x:Type core:Strategy}">
@@ -134,6 +157,14 @@
 
                         <Border Grid.Column="4" Style="{StaticResource PlainStartChipStyle}">
                             <TextBlock Text="обычный старт" VerticalAlignment="Center" />
+                        </Border>
+
+                        <Border Grid.Column="5"
+                                Style="{StaticResource AutoPickResultChipStyle}"
+                                ToolTip="{Binding AutoPickResultTooltip}">
+                            <TextBlock Text="{Binding AutoPickResultText}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="NoWrap" />
                         </Border>
                     </Grid>
 
@@ -323,7 +354,7 @@
                            FontSize="{StaticResource FontSizeCaption}"
                            TextTrimming="CharacterEllipsis"
                            Text="{Binding Title}"
-                           ToolTip="{Binding Detail}">
+                           ToolTip="{Binding TooltipText}">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
@@ -402,6 +433,10 @@
                              GroupName="StrategyFilter" Content="Избранные" Tag="fav"
                              Checked="OnChipChecked" />
                 <RadioButton Style="{StaticResource ChipToggleStyle}"
+                             GroupName="StrategyFilter" Content="Проверенные" Tag="tested"
+                             Checked="OnChipChecked"
+                             ToolTip="Стратегии из последнего автоподбора, включая неудачные" />
+                <RadioButton Style="{StaticResource ChipToggleStyle}"
                              GroupName="StrategyFilter" Content="Discord" Tag="discord"
                              Checked="OnChipChecked" />
                 <RadioButton Style="{StaticResource ChipToggleStyle}"
@@ -436,20 +471,31 @@
                     </Grid.RowDefinitions>
 
                     <Grid Grid.Row="0">
-                        <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0"
+                                    Margin="0,0,16,0"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
                             <TextBlock Style="{StaticResource MicroLabelStyle}" Text="АВТОПОДБОР" />
                             <TextBlock Style="{StaticResource BodyTextStyle}"
                                        Margin="0,4,0,0"
                                        TextTrimming="CharacterEllipsis"
-                                       Text="{Binding Tester.StatusText}" />
+                                       Text="{Binding Tester.StatusText}"
+                                       ToolTip="{Binding Tester.StatusText}" />
                         </StackPanel>
 
-                        <StackPanel Orientation="Horizontal"
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
                                     HorizontalAlignment="Right"
                                     VerticalAlignment="Center">
                             <Button Style="{StaticResource SecondaryButtonStyle}"
                                     Height="32"
                                     Content="Применить лучшую"
+                                    IsEnabled="{Binding CanApplyBestTestedStrategy}"
                                     Click="OnApplyBestClick"
                                     Visibility="{Binding Tester.CanApplyBest, Converter={StaticResource BoolToVis}}" />
 
@@ -466,7 +512,8 @@
                                  Style="{StaticResource ModernProgressBarStyle}"
                                  Margin="0,12,0,0"
                                  Minimum="0" Maximum="1"
-                                 Value="{Binding Tester.Progress, Mode=OneWay}" />
+                                 Value="{Binding Tester.Progress, Mode=OneWay}"
+                                 Visibility="{Binding Tester.IsRunning, Converter={StaticResource BoolToVis}}" />
 
                     <Border Grid.Row="2"
                             Margin="0,12,0,0"
@@ -474,7 +521,8 @@
                             BorderBrush="{StaticResource BrushHairlineWeak}"
                             BorderThickness="1"
                             CornerRadius="{StaticResource Radius6}"
-                            Padding="12,8">
+                            Padding="12,8"
+                            Visibility="{Binding Tester.HasResults, Converter={StaticResource BoolToVis}}">
                         <ScrollViewer Style="{StaticResource ModernScrollViewerStyle}"
                                       MaxHeight="132"
                                       fx:Fx.StickyScroll="True">
@@ -489,6 +537,7 @@
                                Margin="0,8,0,0"
                                Foreground="{StaticResource BrushTextTertiary}"
                                TextWrapping="Wrap"
+                               Visibility="{Binding Tester.IsRunning, Converter={StaticResource BoolToVis}}"
                                Text="Каждая стратегия запускается на несколько секунд, затем проверяется доступность YouTube, Discord и Google. Во время перебора связь будет прерываться." />
                 </Grid>
             </Border>

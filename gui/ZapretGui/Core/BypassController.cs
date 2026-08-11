@@ -41,6 +41,7 @@ public sealed class BypassController
     private GameFilterMode _lastMode;
     private int _restartAttempts;
     private DateTime _restartWindowStart = DateTime.UtcNow;
+    private CancellationTokenSource? _autoRestartCancellation;
 
     private BypassController()
     {
@@ -98,20 +99,26 @@ public sealed class BypassController
     /// AppState routes crash recovery through the same operation gate as manual
     /// switching and service changes.
     /// </summary>
-    public Func<Strategy, GameFilterMode, Task>? AutoRestartRequested { get; set; }
+    public Func<Strategy, GameFilterMode, CancellationToken, Task>? AutoRestartRequested { get; set; }
 
     // ---------------------------------------------------------------- запуск
 
     public async Task<bool> StartAsync(
         Strategy strategy,
         GameFilterMode mode,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool fromAutoRestart = false)
     {
         if (strategy is null)
         {
             Log("Стратегия не выбрана — запуск отменён.", LogLevel.Error);
             return false;
         }
+
+        // Ручной запуск делает ранее запланированное восстановление неактуальным.
+        // Сам callback автоперезапуска сохраняет свой token до конца операции.
+        if (!fromAutoRestart)
+            CancelPendingAutoRestart();
 
         await _mutex.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -221,13 +228,19 @@ public sealed class BypassController
             try { proc.BeginOutputReadLine(); } catch { /* поток уже закрыт */ }
             try { proc.BeginErrorReadLine(); } catch { }
 
-            // ждём StartupProbeMs либо преждевременной смерти процесса
-            using (var cts = new CancellationTokenSource(StartupProbeMs))
+            // Ждём StartupProbeMs либо преждевременной смерти процесса. Отмена вызывающей
+            // операции должна прервать это окно сразу, а не маскироваться под обычный таймаут.
+            using (var startupWindow = new CancellationTokenSource(StartupProbeMs))
+            using (var startupWait = CancellationTokenSource.CreateLinkedTokenSource(
+                       ct,
+                       startupWindow.Token))
             {
-                try { await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false); }
-                catch (OperationCanceledException) { }
+                try { await proc.WaitForExitAsync(startupWait.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (OperationCanceledException) when (startupWindow.IsCancellationRequested) { }
                 catch (Exception) { }
             }
+            ct.ThrowIfCancellationRequested();
 
             bool exited;
             try { exited = proc.HasExited; } catch { exited = true; }
@@ -235,8 +248,6 @@ public sealed class BypassController
             if (exited)
             {
                 await Task.Delay(250).ConfigureAwait(false);   // даём асинхронным читателям дочитать вывод
-                _captureStartup = false;
-
                 int code;
                 try { code = proc.ExitCode; } catch { code = -1; }
 
@@ -244,6 +255,7 @@ public sealed class BypassController
                 {
                     if (ReferenceEquals(_proc, proc)) _proc = null;
                 }
+                _captureStartup = false;
                 SafeDispose(proc);
 
                 Log($"winws.exe завершился сразу после запуска (код {code}).", LogLevel.Error);
@@ -319,6 +331,9 @@ public sealed class BypassController
     /// </param>
     public async Task StopAsync(bool ownedOnly = true)
     {
+        // Иначе уже запущенный Task.Delay мог снова включить обход после явного Stop.
+        CancelPendingAutoRestart();
+
         // Явная остановка пользователем обнуляет счётчик автоперезапусков.
         lock (_gate) _restartAttempts = 0;
 
@@ -461,11 +476,8 @@ public sealed class BypassController
                 SetState(BypassState.Running);
                 return;
             }
-            lock (_gate)
-            {
-                if (ReferenceEquals(_proc, proc)) _proc = null;
-            }
-            SafeDispose(proc);
+            HandleUnexpectedExit(proc);
+            return;
         }
 
         // своего процесса нет — winws.exe может быть поднят службой zapret или сторонним лаунчером
@@ -524,24 +536,33 @@ public sealed class BypassController
 
     private void OnProcessExited(Process proc)
     {
-        bool isCurrent;
-        lock (_gate) isCurrent = ReferenceEquals(_proc, proc);
-        if (!isCurrent) return;          // ожидаемое завершение (StopCoreAsync уже отвязал процесс)
-        if (_captureStartup) return;     // окно запуска обработает StartAsync
+        HandleUnexpectedExit(proc);
+    }
 
-        int code;
-        try { code = proc.ExitCode; } catch { code = -1; }
-
+    /// <summary>
+    /// Ровно один наблюдатель забирает завершившийся процесс из текущей сессии. Это
+    /// исключает двойную обработку между событием Exited, RefreshState и ожидаемым Stop.
+    /// </summary>
+    private void HandleUnexpectedExit(Process proc)
+    {
         Strategy? crashed;
         GameFilterMode mode;
         lock (_gate)
         {
-            if (ReferenceEquals(_proc, proc)) _proc = null;
+            // StopCoreAsync отвязывает ожидаемо завершаемый процесс под тем же lock.
+            // Если другой наблюдатель уже забрал процесс, повторно менять state нельзя.
+            if (!ReferenceEquals(_proc, proc) || _captureStartup)
+                return;
+
+            _proc = null;
             crashed = _activeStrategy;
             mode = _lastMode;
             _activeStrategy = null;
             _startedAt = null;
         }
+
+        int code;
+        try { code = proc.ExitCode; } catch { code = -1; }
         SafeDispose(proc);
 
         Log($"winws.exe неожиданно завершился (код {code}). Обход больше не работает.", LogLevel.Error);
@@ -578,20 +599,65 @@ public sealed class BypassController
         }
 
         int attempt = _restartAttempts;
-        Log($"Автоперезапуск обхода, попытка {attempt} из {MaxAutoRestarts}…", LogLevel.Warn);
-        await Task.Delay(TimeSpan.FromSeconds(2 * attempt)).ConfigureAwait(false);
-
-        if (State is BypassState.Running or BypassState.Starting) return;   // пользователь успел сам
-
-        var restart = AutoRestartRequested;
-        if (restart is null)
+        var cancellation = new CancellationTokenSource();
+        CancellationTokenSource? previous;
+        lock (_gate)
         {
-            Log(
-                "Автоперезапуск отменён: координатор операций уже недоступен.",
-                LogLevel.Warn);
-            return;
+            previous = _autoRestartCancellation;
+            _autoRestartCancellation = cancellation;
         }
-        await restart(strategy, mode).ConfigureAwait(false);
+        try { previous?.Cancel(); } catch { }
+
+        Log($"Автоперезапуск обхода, попытка {attempt} из {MaxAutoRestarts}…", LogLevel.Warn);
+        try
+        {
+            await Task.Delay(
+                TimeSpan.FromSeconds(2 * attempt),
+                cancellation.Token).ConfigureAwait(false);
+
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (State is BypassState.Running or BypassState.Starting) return;   // пользователь успел сам
+            if (!AppSettings.Current.AutoRestartOnCrash) return;
+
+            var restart = AutoRestartRequested;
+            if (restart is null)
+            {
+                Log(
+                    "Автоперезапуск отменён: координатор операций уже недоступен.",
+                    LogLevel.Warn);
+                return;
+            }
+            await restart(strategy, mode, cancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            Log("Отложенный автоперезапуск отменён.", LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            Log("Автоперезапуск завершился ошибкой: " + ex.Message, LogLevel.Error);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_autoRestartCancellation, cancellation))
+                    _autoRestartCancellation = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelPendingAutoRestart()
+    {
+        CancellationTokenSource? cancellation;
+        lock (_gate)
+        {
+            cancellation = _autoRestartCancellation;
+            _autoRestartCancellation = null;
+        }
+
+        try { cancellation?.Cancel(); } catch { }
     }
 
     private static LogLevel Classify(string s)

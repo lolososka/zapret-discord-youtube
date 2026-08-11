@@ -52,6 +52,62 @@ public sealed class Strategy : ObservableObject
         get => _hasWorked;
         set => Set(ref _hasWorked, value);
     }
+
+    private StrategyTestResult? _lastAutoPickResult;
+    private GameFilterMode _lastAutoPickMode;
+
+    /// <summary>Есть актуальный результат для неизменившейся команды стратегии.</summary>
+    public bool HasAutoPickResult => _lastAutoPickResult is not null;
+
+    public bool AutoPickPassedAny => _lastAutoPickResult is { OkCount: > 0 };
+
+    public bool AutoPickPassedAll => _lastAutoPickResult is { TotalCount: > 0 } result
+                                     && result.OkCount == result.TotalCount;
+
+    public int AutoPickOkCount => _lastAutoPickResult?.OkCount ?? -1;
+
+    public int AutoPickLatencySort => _lastAutoPickResult is { AverageLatencyMs: > 0 } result
+        ? result.AverageLatencyMs
+        : int.MaxValue;
+
+    public string AutoPickResultText
+    {
+        get
+        {
+            if (_lastAutoPickResult is not { } result)
+                return string.Empty;
+
+            var latency = result.AverageLatencyMs > 0
+                ? $" · {result.AverageLatencyMs} мс"
+                : string.Empty;
+            return $"тест {result.OkCount}/{result.TotalCount}{latency}";
+        }
+    }
+
+    public string AutoPickResultTooltip
+    {
+        get
+        {
+            if (_lastAutoPickResult is not { } result)
+                return string.Empty;
+
+            var heading = $"Проверено {StrategyTestHistory.LocalTimeText(result.TestedAtUtc)}";
+            var mode = StrategyTestHistory.ModeText(_lastAutoPickMode);
+            return string.IsNullOrWhiteSpace(result.Detail)
+                ? $"{heading}\n{mode}"
+                : $"{result.Detail}\n{heading}\n{mode}";
+        }
+    }
+
+    public void ApplyAutoPickResult(StrategyTestResult? result, GameFilterMode mode)
+    {
+        _lastAutoPickResult = result;
+        _lastAutoPickMode = mode;
+        RaiseMany(nameof(HasAutoPickResult), nameof(AutoPickPassedAny),
+                  nameof(AutoPickPassedAll), nameof(AutoPickOkCount),
+                  nameof(AutoPickLatencySort), nameof(AutoPickResultText),
+                  nameof(AutoPickResultTooltip));
+    }
 }
 
 public static class StrategyParser

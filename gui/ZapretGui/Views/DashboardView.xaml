@@ -170,7 +170,9 @@
         </Style>
 
         <DataTemplate x:Key="ProbeRowTemplate">
-            <Grid Height="26" ToolTip="{Binding Error}">
+            <Grid Height="26"
+                  ToolTip="{Binding Error}"
+                  AutomationProperties.HelpText="{Binding Error}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -188,7 +190,7 @@
                 <TextBlock Grid.Column="2"
                            Style="{StaticResource ProbeLatencyStyle}"
                            VerticalAlignment="Center"
-                           Text="{Binding LatencyMs, StringFormat={}{0} мс}" />
+                           Text="{Binding ResultText}" />
             </Grid>
         </DataTemplate>
 
@@ -627,7 +629,7 @@
                                     <Button Grid.Column="1" Height="26" Padding="10,0" Margin="12,0,0,0"
                                             Style="{StaticResource GhostButtonStyle}"
                                             FontSize="11.5"
-                                            Content="Проверить"
+                                            Content="{Binding ProbeActionText}"
                                             Command="{Binding RunProbesCommand}" />
                                 </Grid>
 
@@ -635,12 +637,12 @@
                                            Style="{StaticResource CaptionTextStyle}"
                                            Foreground="{StaticResource BrushTextTertiary}"
                                            TextWrapping="Wrap"
-                                           Text="Проверяет, открываются ли сайты прямо сейчас" />
+                                           Text="Проверяет прямое соединение без системного HTTP-прокси" />
 
                                 <StackPanel Grid.Row="2" Margin="0,12,0,0">
                                     <TextBlock Style="{StaticResource ProbeEmptyStyle}"
                                                TextWrapping="Wrap"
-                                               Text="Проверка ещё не выполнялась — нажмите «Проверить»." />
+                                               Text="{Binding ProbeEmptyText}" />
 
                                     <ItemsControl ItemsSource="{Binding Probes}"
                                                   ItemTemplate="{StaticResource ProbeRowTemplate}" />

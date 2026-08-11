@@ -19,6 +19,8 @@ namespace ZapretGui.Views;
 /// </summary>
 public partial class StrategiesView : UserControl, INotifyPropertyChanged
 {
+    private static readonly IComparer DefaultOrder = new StrategyOrder();
+    private static readonly IComparer TestedOrder = new TestedStrategyOrder();
     private readonly AppState _state = AppState.Instance;
 
     private ListCollectionView? _rows;
@@ -66,7 +68,7 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
             _rows = new ListCollectionView(_state.Strategies)
             {
                 Filter = FilterRow,
-                CustomSort = new StrategyOrder(),
+                CustomSort = DefaultOrder,
             };
             List.ItemsSource = _rows;
         }
@@ -149,7 +151,13 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
 
         // Refresh сбрасывает текущий элемент вида; выделение ListBox не должно утечь в AppState.
         _syncing = true;
-        try { _rows.Refresh(); }
+        try
+        {
+            var wantedOrder = _chip == "tested" ? TestedOrder : DefaultOrder;
+            if (!ReferenceEquals(_rows.CustomSort, wantedOrder))
+                _rows.CustomSort = wantedOrder;
+            _rows.Refresh();
+        }
         finally { _syncing = false; }
 
         IsEmpty = _rows.IsEmpty;
@@ -163,7 +171,8 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
         if (_search.Length == 0) return true;
 
         if (Has(s.DisplayName) || Has(s.Name) || Has(s.Variant) || Has(s.Summary)
-            || Has(s.TechnicalSummary) || Has(s.RawCommandLine))
+            || Has(s.TechnicalSummary) || Has(s.RawCommandLine)
+            || Has(s.AutoPickResultTooltip))
             return true;
 
         foreach (var tag in s.Tags)
@@ -179,6 +188,7 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
     private bool ChipMatches(Strategy s) => _chip switch
     {
         "fav" => s.IsFavorite || s.HasWorked,
+        "tested" => s.HasAutoPickResult,
         "discord" => HasTag(s, "Discord"),
         "youtube" => HasTag(s, "YouTube") || HasTag(s, "Google"),
         "games" => HasTag(s, "Игры"),
@@ -260,9 +270,8 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
             return;
         }
 
-        _state.SelectedStrategy = best.Strategy;
-        List.ScrollIntoView(best.Strategy);
-        ApplySelectedStrategy();
+        if (_state.TryApplyTestedStrategy(best))
+            List.ScrollIntoView(best.Strategy);
     }
 
     private void ApplySelectedStrategy()
@@ -453,5 +462,28 @@ public partial class StrategiesView : UserControl, INotifyPropertyChanged
         }
 
         private static int Rank(Strategy s) => s.IsFavorite ? 0 : s.HasWorked ? 1 : 2;
+    }
+
+    /// <summary>В фильтре результатов важнее качество замера, а не звёздочка.</summary>
+    private sealed class TestedStrategyOrder : IComparer
+    {
+        public int Compare(object? x, object? y)
+        {
+            if (x is not Strategy a || y is not Strategy b) return 0;
+
+            int worked = b.HasWorked.CompareTo(a.HasWorked);
+            if (worked != 0) return worked;
+
+            int score = b.AutoPickOkCount.CompareTo(a.AutoPickOkCount);
+            if (score != 0) return score;
+
+            int latency = a.AutoPickLatencySort.CompareTo(b.AutoPickLatencySort);
+            if (latency != 0) return latency;
+
+            int favorite = b.IsFavorite.CompareTo(a.IsFavorite);
+            if (favorite != 0) return favorite;
+
+            return a.SortKey.CompareTo(b.SortKey);
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows.Threading;
 
 namespace ZapretGui.Core;
@@ -27,6 +28,7 @@ public sealed class AppState : ObservableObject
     private bool _isBypassOperationActive;
     private bool _isShuttingDown;
     private Task? _shutdownTask;
+    private StrategyTestRun? _activeTestRun;
 
     // «Работала у вас» ставится один раз за запуск — иначе тост повторялся бы каждую секунду.
     private string? _markedThisRun;
@@ -73,11 +75,16 @@ public sealed class AppState : ObservableObject
 
         Tester.PropertyChanged += (_, e) =>
         {
+            if (e.PropertyName is nameof(StrategyTester.Best) or nameof(StrategyTester.CanApplyBest))
+                Raise(nameof(CanApplyBestTestedStrategy));
             if (e.PropertyName != nameof(StrategyTester.IsRunning)) return;
             CancelAutoPickCommand.RaiseCanExecuteChanged();
             RaiseBypassOperationCanExecuteChanged();
             RaiseMany(nameof(CanApplySelectedStrategy), nameof(StrategyActionText), nameof(StrategyActionHint));
         };
+        Tester.RunStarted += OnStrategyTestRunStarted;
+        Tester.TrialCompleted += OnStrategyTrialCompleted;
+        Tester.RunFinished += OnStrategyTestRunFinished;
 
         _bypass.StateChanged += (_, _) => OnBypassStateChanged();
         _bypass.LogWritten += (_, line) => AppendLog(line);
@@ -184,7 +191,8 @@ public sealed class AppState : ObservableObject
         private set
         {
             if (!Set(ref _isApplyingStrategy, value)) return;
-            RaiseMany(nameof(CanApplySelectedStrategy), nameof(StrategyActionText), nameof(StrategyActionHint));
+            RaiseMany(nameof(CanApplySelectedStrategy), nameof(CanApplyBestTestedStrategy),
+                      nameof(StrategyActionText), nameof(StrategyActionHint));
             ApplySelectedStrategyCommand.RaiseCanExecuteChanged();
         }
     }
@@ -259,16 +267,19 @@ public sealed class AppState : ObservableObject
     public GameFilterMode GameFilter
     {
         get => _gameFilter;
-        set
-        {
-            if (!Set(ref _gameFilter, value)) return;
-            FeatureFlags.SetGameFilter(value);
-            RaiseMany(nameof(GameFilterText), nameof(IsGameFilterOn),
-                      nameof(IsSelectedStrategyActive), nameof(CanApplySelectedStrategy),
-                      nameof(StrategyActionText), nameof(StrategyActionHint));
-            RaiseBypassOperationCanExecuteChanged();
-            if (IsRunning) Notify("Игровой фильтр изменён — перезапустите обход", ToastKind.Warning);
-        }
+        set => SetGameFilter(value, notifyRunning: true);
+    }
+
+    private void SetGameFilter(GameFilterMode value, bool notifyRunning)
+    {
+        if (!Set(ref _gameFilter, value, nameof(GameFilter))) return;
+        FeatureFlags.SetGameFilter(value);
+        RaiseMany(nameof(GameFilterText), nameof(IsGameFilterOn),
+                  nameof(IsSelectedStrategyActive), nameof(CanApplySelectedStrategy),
+                  nameof(StrategyActionText), nameof(StrategyActionHint));
+        RaiseBypassOperationCanExecuteChanged();
+        if (notifyRunning && IsRunning)
+            Notify("Игровой фильтр изменён — перезапустите обход", ToastKind.Warning);
     }
 
     public bool IsGameFilterOn => GameFilter != GameFilterMode.Disabled;
@@ -336,7 +347,21 @@ public sealed class AppState : ObservableObject
     }
 
     private bool _isProbing;
-    public bool IsProbing { get => _isProbing; private set => Set(ref _isProbing, value); }
+    public bool IsProbing
+    {
+        get => _isProbing;
+        private set
+        {
+            if (!Set(ref _isProbing, value)) return;
+            Raise(nameof(ProbeActionText));
+            Raise(nameof(ProbeEmptyText));
+        }
+    }
+
+    public string ProbeActionText => IsProbing ? "Проверяем…" : "Проверить";
+    public string ProbeEmptyText => IsProbing
+        ? "Проверяем соединение с Discord и YouTube…"
+        : "Проверка ещё не выполнялась — нажмите «Проверить».";
 
     private string? _busyMessage;
     public string? BusyMessage { get => _busyMessage; private set => Set(ref _busyMessage, value); }
@@ -459,6 +484,7 @@ public sealed class AppState : ObservableObject
         InstallServiceCommand.RaiseCanExecuteChanged();
         RemoveServiceCommand.RaiseCanExecuteChanged();
         AutoPickCommand.RaiseCanExecuteChanged();
+        Raise(nameof(CanApplyBestTestedStrategy));
     }
 
     // ---------- Избранное и «работала у вас» ----------
@@ -494,7 +520,106 @@ public sealed class AppState : ObservableObject
         {
             s.IsFavorite = _prefs.Favorites.Contains(s.Name);
             s.HasWorked = _prefs.SuccessSeconds.TryGetValue(s.Name, out var sec) && sec >= WorkedThresholdSeconds;
+            s.ApplyAutoPickResult(_prefs.FindCurrentTestResult(s), _prefs.LastTestRun?.Mode ?? GameFilterMode.Disabled);
         }
+    }
+
+    private void OnStrategyTestRunStarted(object? sender, StrategyTestRunStartedEventArgs e)
+    {
+        _activeTestRun = new StrategyTestRun
+        {
+            SchemaVersion = StrategyTestHistory.CurrentSchemaVersion,
+            StartedAtUtc = e.StartedAtUtc,
+            Mode = e.Mode,
+            Status = StrategyTestRunStatus.Running,
+            TotalStrategies = e.TotalStrategies,
+            ProbeSuiteFingerprint = StrategyTestHistory.CurrentProbeSuiteFingerprint(),
+        };
+
+        foreach (var strategy in Strategies)
+            strategy.ApplyAutoPickResult(null, e.Mode);
+        StrategyMarksChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnStrategyTrialCompleted(object? sender, StrategyTrialCompletedEventArgs e)
+    {
+        var run = _activeTestRun;
+        var trial = e.Trial;
+        if (run is null || trial.Strategy is null)
+            return;
+
+        var detail = trial.Detail?.Trim() ?? string.Empty;
+        if (detail.Length > StrategyTestHistory.MaxDetailLength)
+            detail = detail[..StrategyTestHistory.MaxDetailLength];
+
+        var result = new StrategyTestResult
+        {
+            StrategyName = trial.Strategy.Name,
+            StrategyFingerprint = StrategyTestHistory.Fingerprint(trial.Strategy),
+            TestedAtUtc = trial.TestedAtUtc,
+            OkCount = trial.OkCount,
+            TotalCount = trial.TotalCount,
+            AverageLatencyMs = trial.AverageLatencyMs,
+            Detail = detail,
+        };
+
+        run.Results.RemoveAll(item => string.Equals(
+            item.StrategyName,
+            result.StrategyName,
+            StringComparison.OrdinalIgnoreCase));
+        run.Results.Add(result);
+        _prefs.LastTestRun = run;
+        trial.Strategy.ApplyAutoPickResult(result, run.Mode);
+        _prefs.Save();
+        StrategyMarksChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnStrategyTestRunFinished(object? sender, StrategyTestRunFinishedEventArgs e)
+    {
+        var run = _activeTestRun;
+        _activeTestRun = null;
+        if (run is null)
+            return;
+
+        // Мгновенная отмена не уничтожает предыдущий полезный замер.
+        if (run.Results.Count == 0)
+        {
+            ApplyStrategyMarks();
+            RestoreStrategyTestHistory();
+            StrategyMarksChanged?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        run.FinishedAtUtc = e.FinishedAtUtc;
+        run.Status = e.Status == StrategyTestRunStatus.Completed &&
+                     run.Results.Count != run.TotalStrategies
+            ? StrategyTestRunStatus.Failed
+            : e.Status;
+        _prefs.LastTestRun = run;
+        _prefs.Save();
+        RestoreStrategyTestHistory();
+        StrategyMarksChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RestoreStrategyTestHistory()
+    {
+        var run = _prefs.LastTestRun;
+        if (run is null)
+        {
+            Tester.RestoreHistory(Array.Empty<StrategyTrial>(), null);
+            return;
+        }
+
+        if (!StrategyTestHistory.UsesCurrentProbeSuite(run))
+        {
+            Tester.RestoreHistory(
+                Array.Empty<StrategyTrial>(),
+                run,
+                "Набор проверок изменился после обновления — запустите автоподбор снова");
+            return;
+        }
+
+        Tester.RestoreHistory(_prefs.CreateCurrentTrials(Strategies), run);
     }
 
     private const int WorkedThresholdSeconds = 60;
@@ -548,8 +673,18 @@ public sealed class AppState : ObservableObject
 
         Notify("Перебор начат: обход будет перезапускаться на каждой стратегии", ToastKind.Info);
 
-        await Tester.RunAsync(Strategies.ToList(), GameFilter, ct);
+        var outcome = await Tester.RunAsync(Strategies.ToList(), GameFilter, ct);
         if (ct.IsCancellationRequested || _isShuttingDown) return;
+        if (outcome == StrategyTestRunStatus.Cancelled)
+        {
+            Notify("Автоподбор остановлен — сохранённые результаты не потеряны", ToastKind.Info);
+            return;
+        }
+        if (outcome != StrategyTestRunStatus.Completed)
+        {
+            Notify("Автоподбор прервался — прежние результаты не потеряны", ToastKind.Warning);
+            return;
+        }
 
         var best = Tester.Best;
         if (best is null)
@@ -558,8 +693,82 @@ public sealed class AppState : ObservableObject
             return;
         }
 
-        Notify($"Лучший результат: {best.Title} — {best.ScoreText}", ToastKind.Success);
+        Notify(
+            best.Success
+                ? $"Лучший результат: {best.Title} — Discord и YouTube доступны"
+                : $"Полностью рабочая стратегия не найдена. Лучший частичный результат: {best.Title} — {best.ScoreText}",
+            best.Success ? ToastKind.Success : ToastKind.Warning);
     }
+
+    /// <summary>
+    /// Применяет пару «стратегия + игровой режим», которая действительно была проверена.
+    /// Проверка выполняется до изменения сохранённого выбора, поэтому заблокированная
+    /// операция не оставляет после себя неожиданные настройки.
+    /// </summary>
+    public bool TryApplyTestedStrategy(StrategyTrial? trial)
+    {
+        if (trial?.Strategy is not { } strategy)
+        {
+            Notify("Перебор ещё не нашёл рабочую стратегию", ToastKind.Warning);
+            return false;
+        }
+
+        if (!CanApplyStrategy(strategy, trial.Mode))
+        {
+            var reason = _isShuttingDown
+                ? "Приложение завершает работу"
+                : Tester.IsRunning
+                    ? "Дождитесь завершения автоподбора"
+                    : IsBusy || IsApplyingStrategy || _isBypassOperationActive
+                        ? "Дождитесь завершения текущей операции"
+                        : IsRunning && _bypass.ActiveStrategy is null
+                            ? "Сначала остановите службу или внешний обход"
+                            : "Эта стратегия с проверенным режимом уже запущена";
+            Notify(reason, ToastKind.Warning);
+            return false;
+        }
+
+        // Процесс уже может работать ровно в проверенной конфигурации, пока выбор в UI
+        // был изменён без перезапуска. В этом случае достаточно синхронизировать настройки.
+        if (IsRunning && SameStrategy(strategy, _bypass.ActiveStrategy) &&
+            trial.Mode == _bypass.ActiveGameFilterMode)
+        {
+            SelectedStrategy = strategy;
+            SetGameFilter(trial.Mode, notifyRunning: false);
+            Notify("Проверенная конфигурация уже запущена — настройки синхронизированы", ToastKind.Info);
+            return true;
+        }
+
+        var previousStrategy = SelectedStrategy;
+        var previousMode = GameFilter;
+        SelectedStrategy = strategy;
+        SetGameFilter(trial.Mode, notifyRunning: false);
+
+        if (!ApplySelectedStrategyCommand.CanExecute(null))
+        {
+            SelectedStrategy = previousStrategy;
+            SetGameFilter(previousMode, notifyRunning: false);
+            Notify("Не удалось начать переключение — повторите через несколько секунд", ToastKind.Warning);
+            return false;
+        }
+
+        ApplySelectedStrategyCommand.Execute(null);
+        return true;
+    }
+
+    public bool CanApplyBestTestedStrategy => Tester.Best is { } best &&
+                                               CanApplyStrategy(best.Strategy, best.Mode);
+
+    private bool CanApplyStrategy(Strategy strategy, GameFilterMode mode)
+        => strategy is not null
+           && CanStartBypassOperation
+           && !IsApplyingStrategy
+           && !IsBusy
+           && !Tester.IsRunning
+           && !(IsRunning && _bypass.ActiveStrategy is null)
+           && !(IsRunning && SameStrategy(strategy, _bypass.ActiveStrategy) &&
+                mode == _bypass.ActiveGameFilterMode &&
+                SameStrategy(SelectedStrategy, strategy) && GameFilter == mode);
 
     /// <summary>Всплывающие уведомления: подписывается MainWindow.</summary>
     public event EventHandler<(string Message, ToastKind Kind)>? Notification;
@@ -605,6 +814,7 @@ public sealed class AppState : ObservableObject
         foreach (var s in list) Strategies.Add(s);
 
         ApplyStrategyMarks();
+        RestoreStrategyTestHistory();
 
         // Приоритет подсказок: выбор пользователя → то, что у него уже работало → избранное → обычный старт.
         var wanted = AppSettings.Current.LastStrategy;
@@ -736,7 +946,8 @@ public sealed class AppState : ObservableObject
     private async Task AutoRestartBypassAsync(
         Strategy strategy,
         GameFilterMode mode,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool fromAutoRestart = false)
     {
         ct.ThrowIfCancellationRequested();
         _bypass.RefreshState();
@@ -754,27 +965,64 @@ public sealed class AppState : ObservableObject
         _bypass.RefreshState();
         if (_bypass.State is BypassState.Running or BypassState.Starting)
             return;
-        await _bypass.StartAsync(strategy, mode, ct);
+        await _bypass.StartAsync(strategy, mode, ct, fromAutoRestart);
     }
 
     private Task QueueAutoRestartAsync(
         Strategy strategy,
-        GameFilterMode mode)
+        GameFilterMode mode,
+        CancellationToken restartCancellation)
     {
+        // Во время автоподбора процессами управляет сам StrategyTester. Иначе падение
+        // одной тестовой стратегии ставит обычный автоперезапуск в очередь и после
+        // завершения перебора неожиданно включает уже проверенный временный профиль.
+        if (Tester.IsRunning)
+        {
+            _bypass.Log("Автоперезапуск пропущен: сейчас идёт автоподбор стратегий.", LogLevel.Info);
+            return Task.CompletedTask;
+        }
+
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.HasShutdownStarted)
             return Task.CompletedTask;
         if (dispatcher.CheckAccess())
         {
             return RunBypassOperationAsync(
-                ct => AutoRestartBypassAsync(strategy, mode, ct));
+                ct => RunAutoRestartWithLinkedCancellationAsync(
+                    strategy,
+                    mode,
+                    ct,
+                    restartCancellation));
         }
 
         return dispatcher.InvokeAsync(
                 () => RunBypassOperationAsync(
-                    ct => AutoRestartBypassAsync(strategy, mode, ct)))
+                    ct => RunAutoRestartWithLinkedCancellationAsync(
+                        strategy,
+                        mode,
+                        ct,
+                        restartCancellation)))
             .Task
             .Unwrap();
+    }
+
+    private async Task RunAutoRestartWithLinkedCancellationAsync(
+        Strategy strategy,
+        GameFilterMode mode,
+        CancellationToken appCancellation,
+        CancellationToken restartCancellation)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            appCancellation,
+            restartCancellation);
+        try
+        {
+            await AutoRestartBypassAsync(strategy, mode, linked.Token, fromAutoRestart: true);
+        }
+        catch (OperationCanceledException) when (restartCancellation.IsCancellationRequested)
+        {
+            // Пользователь остановил или запустил обход вручную: старый recovery больше не нужен.
+        }
     }
 
     private void NotifyManualStartResult(bool started, Strategy target)
@@ -861,7 +1109,17 @@ public sealed class AppState : ObservableObject
                 : $"Переключение с «{fallback.DisplayName}» на «{target.DisplayName}»…");
 
             var switched = await _bypass.StartAsync(target, GameFilter, ct);
-            if (ct.IsCancellationRequested || _isShuttingDown) return;
+            if (ct.IsCancellationRequested || _isShuttingDown)
+            {
+                // Отменённый неудачный старт не должен стать следующим AutoStart-профилем.
+                // Сам fallback при shutdown не запускаем, возвращаем только сохранённый выбор.
+                if (!switched)
+                {
+                    SelectedStrategy = fallback;
+                    SetGameFilter(previousMode, notifyRunning: false);
+                }
+                return;
+            }
 
             if (switched)
             {
@@ -878,11 +1136,17 @@ public sealed class AppState : ObservableObject
             if (_bypass.State is BypassState.Running && _bypass.ActiveStrategy is null)
             {
                 SelectedStrategy = fallback;
+                SetGameFilter(previousMode, notifyRunning: false);
                 Notify(
                     "Переключение отменено: обнаружен чужой или служебный winws.exe. Прежняя стратегия не запускалась.",
                     ToastKind.Warning);
                 return;
             }
+
+            // Выбор в интерфейсе и сохранённый feature flag должны соответствовать
+            // конфигурации, которую сейчас будем восстанавливать (или предложим при следующем запуске).
+            SelectedStrategy = fallback;
+            SetGameFilter(previousMode, notifyRunning: false);
 
             // Shutdown отменяет token до ожидания общего gate. После этой точки fallback
             // не должен начинаться, иначе он сможет появиться после финального StopAsync.
@@ -890,7 +1154,6 @@ public sealed class AppState : ObservableObject
 
             // Не оставляем повреждённый профиль последним выбранным: иначе при следующем
             // AutoStartBypass приложение снова попробует запустить его.
-            SelectedStrategy = fallback;
             _bypass.Log(
                 $"«{target.DisplayName}» не запустилась. Восстанавливаем «{fallback.DisplayName}»…",
                 LogLevel.Warn);
@@ -1112,14 +1375,45 @@ public sealed class AppState : ObservableObject
         Probes.Clear();
         try
         {
-            var tasks = ConnectivityTester.Sites.Select(async s =>
+            var results = await ConnectivityTester.ProbeAllAsync(
+                ConnectivityTester.Sites,
+                _shutdownCancellation.Token);
+
+            // Task.WhenAll сохраняет исходный порядок — строки больше не прыгают
+            // в зависимости от того, какой сайт ответил первым.
+            foreach (var result in results)
+                Probes.Add(result);
+
+            var targets = results.Where(result => result.Site.CountsTowardStrategyScore).ToArray();
+            int opened = targets.Count(result => result.Ok);
+            int extraFailures = results.Count(result => !result.Site.CountsTowardStrategyScore && !result.Ok);
+            if (opened == targets.Length)
             {
-                var r = await ConnectivityTester.ProbeAsync(s, CancellationToken.None);
-                Probes.Add(r);
-            });
-            await Task.WhenAll(tasks);
+                var extra = extraFailures == 0
+                    ? string.Empty
+                    : $" Дополнительных сбоев: {extraFailures}.";
+                Notify("Discord и YouTube доступны." + extra, ToastKind.Success);
+            }
+            else
+            {
+                Notify(
+                    $"Открылись {opened} из {targets.Length} основных адресов. Причины показаны в списке.",
+                    ToastKind.Warning);
+            }
         }
-        finally { IsProbing = false; }
+        catch (OperationCanceledException) when (_shutdownCancellation.IsCancellationRequested)
+        {
+            // Приложение закрывается — результат уже не нужен.
+        }
+        catch (Exception ex)
+        {
+            _bypass.Log("Проверка соединения завершилась ошибкой: " + ex.Message, LogLevel.Error);
+            Notify("Не удалось завершить проверку соединения", ToastKind.Error);
+        }
+        finally
+        {
+            IsProbing = false;
+        }
     }
 
     private async Task UpdateIpsetAsync()
@@ -1208,6 +1502,9 @@ public sealed class StrategyPreferences
     /// <summary>Имя стратегии → самое долгое непрерывное время работы, секунды.</summary>
     public Dictionary<string, int> SuccessSeconds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Последний автоподбор хотя бы с одним замером. DTO не содержит путей и полных команд.</summary>
+    public StrategyTestRun? LastTestRun { get; set; }
+
     private static readonly object Sync = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.General)
@@ -1216,22 +1513,25 @@ public sealed class StrategyPreferences
         PropertyNameCaseInsensitive = true,
     };
 
+    static StrategyPreferences()
+    {
+        JsonOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+    }
+
     private static string FilePath => Path.Combine(AppPaths.DataDir, "strategies.json");
 
     public static StrategyPreferences Load()
+        => Load(FilePath);
+
+    public static StrategyPreferences Load(string path)
     {
         try
         {
-            var path = FilePath;
             if (File.Exists(path))
             {
                 var json = File.ReadAllText(path);
                 if (!string.IsNullOrWhiteSpace(json))
-                {
-                    var loaded = JsonSerializer.Deserialize<StrategyPreferences>(json, JsonOptions);
-                    if (loaded is not null)
-                        return loaded.Normalized();
-                }
+                    return FromJson(json);
             }
         }
         catch
@@ -1242,41 +1542,199 @@ public sealed class StrategyPreferences
         return new StrategyPreferences();
     }
 
+    public static StrategyPreferences FromJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new StrategyPreferences();
+
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<StrategyPreferences>(json, JsonOptions);
+            if (loaded is not null)
+                return loaded.Normalized();
+        }
+        catch
+        {
+            // Повреждённое поле истории не должно уничтожать избранное и накопленное время.
+        }
+
+        return ReadBasePreferencesTolerantly(json);
+    }
+
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+
     /// <summary>Никогда не бросает: потеря звёздочек не повод падать.</summary>
     public void Save()
+        => Save(FilePath);
+
+    public void Save(string path)
     {
+        string? temporaryPath = null;
         try
         {
             lock (Sync)
             {
-                var path = FilePath;
                 var dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir))
                     Directory.CreateDirectory(dir);
 
-                File.WriteAllText(path, JsonSerializer.Serialize(this, JsonOptions));
+                temporaryPath = path + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                File.WriteAllText(temporaryPath, ToJson(), new System.Text.UTF8Encoding(false));
+                if (File.Exists(path))
+                    File.Replace(temporaryPath, path, destinationBackupFileName: null, ignoreMetadataErrors: true);
+                else
+                {
+                    try { File.Move(temporaryPath, path); }
+                    catch (IOException) when (File.Exists(path))
+                    {
+                        File.Replace(temporaryPath, path, destinationBackupFileName: null, ignoreMetadataErrors: true);
+                    }
+                }
+                temporaryPath = null;
             }
         }
         catch
         {
             // нет прав на %APPDATA% — молча продолжаем в памяти
         }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                try { File.Delete(temporaryPath); }
+                catch { }
+            }
+        }
+    }
+
+    public StrategyTestResult? FindCurrentTestResult(Strategy strategy)
+    {
+        var run = LastTestRun;
+        if (strategy is null || run is null || !StrategyTestHistory.UsesCurrentProbeSuite(run))
+            return null;
+
+        foreach (var result in run.Results)
+            if (result.TotalCount == ConnectivityTester.ScoredSiteCount &&
+                StrategyTestHistory.Matches(strategy, result))
+                return result;
+
+        return null;
+    }
+
+    public IReadOnlyList<StrategyTrial> CreateCurrentTrials(IEnumerable<Strategy> strategies)
+    {
+        var run = LastTestRun;
+        if (run is null || !StrategyTestHistory.UsesCurrentProbeSuite(run))
+            return Array.Empty<StrategyTrial>();
+
+        var byName = new Dictionary<string, Strategy>(StringComparer.OrdinalIgnoreCase);
+        foreach (var strategy in strategies ?? Array.Empty<Strategy>())
+            if (strategy is not null && !string.IsNullOrWhiteSpace(strategy.Name))
+                byName.TryAdd(strategy.Name, strategy);
+
+        var trials = new List<StrategyTrial>();
+        foreach (var result in run.Results)
+        {
+            if (!byName.TryGetValue(result.StrategyName, out var strategy) ||
+                result.TotalCount != ConnectivityTester.ScoredSiteCount ||
+                !StrategyTestHistory.Matches(strategy, result))
+                continue;
+
+            trials.Add(new StrategyTrial(
+                strategy,
+                result.OkCount == result.TotalCount,
+                result.OkCount,
+                result.TotalCount,
+                result.AverageLatencyMs,
+                result.Detail,
+                result.TestedAtUtc,
+                run.Mode));
+        }
+
+        return trials;
     }
 
     /// <summary>System.Text.Json создаёт коллекции с компаратором по умолчанию — вернём регистронезависимость.</summary>
     private StrategyPreferences Normalized()
     {
-        Favorites = Favorites is null
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(Favorites, StringComparer.OrdinalIgnoreCase);
+        var favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in Favorites ?? new HashSet<string>())
+            if (!string.IsNullOrWhiteSpace(name) && name.Length <= 260)
+                favorites.Add(name.Trim());
+        Favorites = favorites;
 
-        SuccessSeconds = SuccessSeconds is null
-            ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, int>(SuccessSeconds, StringComparer.OrdinalIgnoreCase);
+        var seconds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in SuccessSeconds ?? new Dictionary<string, int>())
+            if (!string.IsNullOrWhiteSpace(pair.Key) && pair.Key.Length <= 260 && pair.Value >= 0)
+                seconds[pair.Key.Trim()] = pair.Value;
+        SuccessSeconds = seconds;
 
         if (string.IsNullOrWhiteSpace(LastWorking))
             LastWorking = null;
+        else
+            LastWorking = LastWorking.Trim();
+
+        LastTestRun = StrategyTestHistory.Normalize(LastTestRun);
 
         return this;
+    }
+
+    private static StrategyPreferences ReadBasePreferencesTolerantly(string json)
+    {
+        var result = new StrategyPreferences();
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return result;
+
+            var root = document.RootElement;
+            if (TryGetProperty(root, nameof(Favorites), out var favorites) &&
+                favorites.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in favorites.EnumerateArray())
+                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { } name)
+                        result.Favorites.Add(name);
+            }
+
+            if (TryGetProperty(root, nameof(LastWorking), out var lastWorking) &&
+                lastWorking.ValueKind == JsonValueKind.String)
+                result.LastWorking = lastWorking.GetString();
+
+            if (TryGetProperty(root, nameof(SuccessSeconds), out var success) &&
+                success.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var item in success.EnumerateObject())
+                    if (item.Value.ValueKind == JsonValueKind.Number && item.Value.TryGetInt32(out int value))
+                        result.SuccessSeconds[item.Name] = value;
+            }
+
+            if (TryGetProperty(root, nameof(LastTestRun), out var history) &&
+                history.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            {
+                try { result.LastTestRun = history.Deserialize<StrategyTestRun>(JsonOptions); }
+                catch { result.LastTestRun = null; }
+            }
+        }
+        catch
+        {
+            return new StrategyPreferences();
+        }
+
+        return result.Normalized();
+    }
+
+    private static bool TryGetProperty(JsonElement source, string name, out JsonElement value)
+    {
+        foreach (var property in source.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            value = property.Value;
+            return true;
+        }
+
+        value = default;
+        return false;
     }
 }
