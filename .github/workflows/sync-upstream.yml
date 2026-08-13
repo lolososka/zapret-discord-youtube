@@ -127,7 +127,12 @@ jobs:
               exit 1
             fi
 
-            git diff --cached --check
+            # Flowseal periodically regenerates this data file with significant
+            # padding at line endings. Preserve upstream data byte-for-byte instead
+            # of blocking every sync on a formatting rule meant for source files.
+            git diff --cached --check -- \
+              . \
+              ":(exclude)lists/ipset-all.txt.backup"
             CHANGED=true
           fi
 
