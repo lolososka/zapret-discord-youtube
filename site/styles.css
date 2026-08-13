@@ -26,6 +26,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   scroll-behavior: smooth;
   scroll-padding-top: calc(var(--header-height) + 24px);

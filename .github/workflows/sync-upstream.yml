@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_current:
-        description: Build or finish the portable release for the current Flowseal revision
+        description: Build or finish the Windows release for the current Flowseal revision
         required: true
         type: boolean
         default: true
@@ -192,7 +192,13 @@ jobs:
 
           $tag = "gui-v$env:GUI_VERSION-flowseal-v$env:UPSTREAM_VERSION-u$env:UPSTREAM_SHORT"
           $zipName = "zapret-control-center-$env:GUI_VERSION-flowseal-$env:UPSTREAM_VERSION-win-x64.zip"
-          $requiredNames = @($zipName, 'ZapretGUI.exe', 'SHA256SUMS.txt')
+          $installerName = "zapret-control-center-setup-$env:GUI_VERSION-flowseal-$env:UPSTREAM_VERSION-win-x64.exe"
+          $requiredNames = @(
+            $installerName,
+            $zipName,
+            'ZapretGUI.exe',
+            'SHA256SUMS.txt'
+          )
           $headers = @{
             Accept = 'application/vnd.github+json'
             'User-Agent' = 'zapret-control-center-release-check'
@@ -219,6 +225,13 @@ jobs:
           }
 
           $assets = @($release.assets)
+          if ($assets.Count -ne $requiredNames.Count) {
+            $actualNames = @($assets.name | Sort-Object) -join ', '
+            throw (
+              "Published release $tag must contain exactly four assets; " +
+              "found $($assets.Count): $actualNames"
+            )
+          }
           foreach ($requiredName in $requiredNames) {
             $matches = @($assets | Where-Object name -eq $requiredName)
             if ($matches.Count -ne 1 -or [long]$matches[0].size -le 0) {
@@ -247,7 +260,7 @@ jobs:
               $checksumMap[$Matches[2]] = $Matches[1].ToLowerInvariant()
             }
           }
-          foreach ($assetName in @($zipName, 'ZapretGUI.exe')) {
+          foreach ($assetName in @($installerName, $zipName, 'ZapretGUI.exe')) {
             if (-not $checksumMap.ContainsKey($assetName)) {
               throw "Published release $tag does not list $assetName in SHA256SUMS.txt."
             }
@@ -259,7 +272,7 @@ jobs:
           }
 
           "needed=false" >> $env:GITHUB_OUTPUT
-          "### Portable release already verified" >> $env:GITHUB_STEP_SUMMARY
+          "### Windows release already verified" >> $env:GITHUB_STEP_SUMMARY
           "" >> $env:GITHUB_STEP_SUMMARY
           "[$tag]($($release.html_url)) contains all verified assets." >> $env:GITHUB_STEP_SUMMARY
 
@@ -289,7 +302,10 @@ jobs:
             'gui/ZapretGui/ZapretGui.csproj',
             'gui/ZapretGui.Smoke/ZapretGui.Smoke.csproj',
             'gui/build.ps1',
-            'gui/package-release.ps1'
+            'gui/build-installer.ps1',
+            'gui/package-release.ps1',
+            'gui/test-installer.ps1',
+            'gui/installer/ZapretControlCenter.iss'
           )
           foreach ($path in $requiredPaths) {
             if (-not (Test-Path -LiteralPath $path)) {
@@ -346,7 +362,7 @@ jobs:
           $syncCommit = (git rev-parse HEAD).Trim()
           "fork_commit=$syncCommit" >> $env:GITHUB_OUTPUT
 
-      - name: Package the portable release
+      - name: Package the Windows release
         if: steps.release-gate.outputs.needed == 'true'
         shell: pwsh
         env:
@@ -379,6 +395,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged ZIP validation failed with exit code $LASTEXITCODE."
           }
+
+          & ./gui/test-installer.ps1 `
+            -InstallerPath $metadata.InstallerPath `
+            -GuiVersion $metadata.GuiVersion `
+            -UpstreamVersion $metadata.UpstreamVersion `
+            -Tag $metadata.Tag
 
       - name: Bundle the verified sync commit
         if: steps.sync.outputs.changed == 'true'
@@ -799,10 +821,18 @@ jobs:
 
             $assets = @($Release.assets)
             $requiredNames = @(
+              [string]$Metadata.InstallerName,
               [string]$Metadata.ZipName,
               [string]$Metadata.ExeName,
               [string]$Metadata.ChecksumsName
             )
+            if ($assets.Count -ne $requiredNames.Count) {
+              $actualNames = @($assets.name | Sort-Object) -join ', '
+              throw (
+                "Release $($Metadata.Tag) must contain exactly four assets; " +
+                "found $($assets.Count): $actualNames"
+              )
+            }
             foreach ($requiredName in $requiredNames) {
               $matches = @($assets | Where-Object name -eq $requiredName)
               if ($matches.Count -ne 1 -or [long]$matches[0].size -le 0) {
@@ -859,10 +889,12 @@ jobs:
             }
 
             $expectedLocal = @{
+              ([string]$Metadata.InstallerName) = ([string]$Metadata.InstallerSha256).ToLowerInvariant()
               ([string]$Metadata.ZipName) = ([string]$Metadata.ZipSha256).ToLowerInvariant()
               ([string]$Metadata.ExeName) = ([string]$Metadata.ExeSha256).ToLowerInvariant()
             }
             foreach ($assetName in @(
+              [string]$Metadata.InstallerName,
               [string]$Metadata.ZipName,
               [string]$Metadata.ExeName
             )) {
@@ -904,20 +936,24 @@ jobs:
           $upstreamShort = ([string]$metadata.UpstreamCommit).Substring(0, 12)
           $expectedTag = "gui-v$($metadata.GuiVersion)-flowseal-v$($metadata.UpstreamVersion)-u$upstreamShort"
           $expectedZipName = "zapret-control-center-$($metadata.GuiVersion)-flowseal-$($metadata.UpstreamVersion)-win-x64.zip"
+          $expectedInstallerName = "zapret-control-center-setup-$($metadata.GuiVersion)-flowseal-$($metadata.UpstreamVersion)-win-x64.exe"
           if (
             [string]$metadata.Tag -ne $expectedTag -or
             [string]$metadata.ZipName -ne $expectedZipName -or
+            [string]$metadata.InstallerName -ne $expectedInstallerName -or
             [string]$metadata.ExeName -ne 'ZapretGUI.exe' -or
             [string]$metadata.ChecksumsName -ne 'SHA256SUMS.txt'
           ) {
             throw 'Release metadata contains unexpected tag or asset names.'
           }
 
+          $metadata.InstallerPath = Join-Path $releaseDir $metadata.InstallerName
           $metadata.ZipPath = Join-Path $releaseDir $metadata.ZipName
           $metadata.ExePath = Join-Path $releaseDir $metadata.ExeName
           $metadata.ChecksumsPath = Join-Path $releaseDir $metadata.ChecksumsName
           $metadata.NotesPath = Join-Path $releaseDir 'RELEASE_NOTES.md'
           foreach ($assetPath in @(
+            [string]$metadata.InstallerPath,
             [string]$metadata.ZipPath,
             [string]$metadata.ExePath,
             [string]$metadata.ChecksumsPath,
@@ -928,6 +964,9 @@ jobs:
             }
           }
 
+          $localInstallerHash = (
+            Get-FileHash -LiteralPath $metadata.InstallerPath -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
           $localZipHash = (
             Get-FileHash -LiteralPath $metadata.ZipPath -Algorithm SHA256
           ).Hash.ToLowerInvariant()
@@ -935,6 +974,7 @@ jobs:
             Get-FileHash -LiteralPath $metadata.ExePath -Algorithm SHA256
           ).Hash.ToLowerInvariant()
           if (
+            $localInstallerHash -ne ([string]$metadata.InstallerSha256).ToLowerInvariant() -or
             $localZipHash -ne ([string]$metadata.ZipSha256).ToLowerInvariant() -or
             $localExeHash -ne ([string]$metadata.ExeSha256).ToLowerInvariant()
           ) {
@@ -949,7 +989,7 @@ jobs:
               -Release $release `
               -Metadata $metadata `
               -CompareLocal $false
-            "### Portable release already published and verified" >> $env:GITHUB_STEP_SUMMARY
+            "### Windows release already published and verified" >> $env:GITHUB_STEP_SUMMARY
             "" >> $env:GITHUB_STEP_SUMMARY
             "[$($metadata.Tag)]($($release.html_url))" >> $env:GITHUB_STEP_SUMMARY
             exit 0
@@ -1027,6 +1067,7 @@ jobs:
             -Repository $repo `
             -ReleaseId ([long]$release.id)
           $requiredNames = @(
+            [string]$metadata.InstallerName,
             [string]$metadata.ZipName,
             [string]$metadata.ExeName,
             [string]$metadata.ChecksumsName
@@ -1043,6 +1084,7 @@ jobs:
           }
 
           foreach ($assetPath in @(
+            [string]$metadata.InstallerPath,
             [string]$metadata.ZipPath,
             [string]$metadata.ExePath,
             [string]$metadata.ChecksumsPath
@@ -1057,8 +1099,8 @@ jobs:
           $release = Get-ReleaseById `
             -Repository $repo `
             -ReleaseId ([long]$release.id)
-          if (@($release.assets).Count -ne 3) {
-            throw "Draft must contain exactly three assets; found $(@($release.assets).Count)."
+          if (@($release.assets).Count -ne 4) {
+            throw "Draft must contain exactly four assets; found $(@($release.assets).Count)."
           }
           Assert-ReleaseAssets `
             -Release $release `
@@ -1117,9 +1159,10 @@ jobs:
             -Metadata $metadata `
             -CompareLocal $true
 
-          "### Portable release published" >> $env:GITHUB_STEP_SUMMARY
+          "### Windows release published" >> $env:GITHUB_STEP_SUMMARY
           "" >> $env:GITHUB_STEP_SUMMARY
           "[$($metadata.Tag)]($($release.html_url))" >> $env:GITHUB_STEP_SUMMARY
           "" >> $env:GITHUB_STEP_SUMMARY
+          "- Installer SHA-256: ``$($metadata.InstallerSha256)``" >> $env:GITHUB_STEP_SUMMARY
           "- ZIP SHA-256: ``$($metadata.ZipSha256)``" >> $env:GITHUB_STEP_SUMMARY
           "- EXE SHA-256: ``$($metadata.ExeSha256)``" >> $env:GITHUB_STEP_SUMMARY

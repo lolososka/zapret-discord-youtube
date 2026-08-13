@@ -1,5 +1,5 @@
 <#
-    Creates the portable GitHub Release assets for Zapret Control Center.
+    Creates the installer and portable GitHub Release assets for Zapret Control Center.
 
     The archive is built from an explicit allowlist and uses fixed ZIP entry
     timestamps so the package layout is stable across retries.
@@ -176,6 +176,7 @@ $tag = "gui-v$GuiVersion-flowseal-v$UpstreamVersion-u$upstreamShort"
 $title = "Zapret Control Center v$GuiVersion + Flowseal v$UpstreamVersion"
 $packageRootName = "zapret-control-center-$GuiVersion-flowseal-$UpstreamVersion-win-x64"
 $zipName = "$packageRootName.zip"
+$installerName = "zapret-control-center-setup-$GuiVersion-flowseal-$UpstreamVersion-win-x64.exe"
 $exeName = 'ZapretGUI.exe'
 $checksumsName = 'SHA256SUMS.txt'
 $notesName = 'RELEASE_NOTES.md'
@@ -183,6 +184,7 @@ $metadataName = 'release-metadata.json'
 $updateManifestName = 'UPDATE_MANIFEST.json'
 
 $zipPath = Join-Path $OutputDir $zipName
+$installerPath = Join-Path $OutputDir $installerName
 $releaseExePath = Join-Path $OutputDir $exeName
 $checksumsPath = Join-Path $OutputDir $checksumsName
 $notesPath = Join-Path $OutputDir $notesName
@@ -193,6 +195,7 @@ $verifyRoot = Join-Path $OutputDir ("verify-" + [guid]::NewGuid().ToString('N'))
 
 foreach ($knownOutput in @(
     $zipPath,
+    $installerPath,
     $releaseExePath,
     $checksumsPath,
     $notesPath,
@@ -470,29 +473,49 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
         throw 'Extracted ZIP contains no strategies.'
     }
 
+    $installerBuildScript = Join-Path $RepoRoot 'gui\build-installer.ps1'
+    if (-not (Test-Path -LiteralPath $installerBuildScript -PathType Leaf)) {
+        throw "Installer build script is missing: $installerBuildScript"
+    }
+    & $installerBuildScript `
+        -PackageRoot $packageRoot `
+        -OutputDir $OutputDir `
+        -InstallerName $installerName `
+        -GuiVersion $GuiVersion `
+        -UpstreamVersion $UpstreamVersion `
+        -RepoRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installer build failed with exit code $LASTEXITCODE."
+    }
+
     $zipHash = (
         Get-FileHash -LiteralPath $zipPath -Algorithm SHA256
     ).Hash.ToLowerInvariant()
     $exeHash = (
         Get-FileHash -LiteralPath $releaseExePath -Algorithm SHA256
     ).Hash.ToLowerInvariant()
+    $installerHash = (
+        Get-FileHash -LiteralPath $installerPath -Algorithm SHA256
+    ).Hash.ToLowerInvariant()
     $checksums = @(
+        "$installerHash  $installerName",
         "$zipHash  $zipName",
         "$exeHash  $exeName"
     ) -join "`n"
     Write-Utf8NoBom -Path $checksumsPath -Value ($checksums + "`n")
 
     $releaseNotes = @'
-## Готовая portable-сборка
+## Готовый установщик для Windows
 
 Это **неофициальный community fork**. Flowseal не связан с Zapret Control Center
 и не одобрял эту сборку как официальную.
 
-1. Скачайте `__ZIP_NAME__`.
-2. Распакуйте архив в новую папку.
-3. Запустите `ZapretGUI.exe` от имени администратора.
+1. Скачайте `__INSTALLER_NAME__`.
+2. Запустите установщик и подтвердите запрос Windows.
+3. Откройте Zapret Control Center через созданный ярлык.
 
-В архив уже входят GUI, Flowseal-стратегии, `bin`, `lists`, `utils` и `service.bat`.
+Установщик уже содержит GUI, Flowseal-стратегии, `bin`, `lists`, `utils` и `service.bat`.
+`__ZIP_NAME__` остаётся portable-вариантом без установки и используется встроенным обновлением.
 Отдельный `ZapretGUI.exe` предназначен для ручного обновления уже существующей папки.
 Контрольные суммы находятся в `__CHECKSUMS_NAME__`.
 
@@ -515,6 +538,7 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
 Исходный проект: https://github.com/Flowseal/zapret-discord-youtube
 '@
     $releaseNotes = $releaseNotes.Replace('__ZIP_NAME__', $zipName)
+    $releaseNotes = $releaseNotes.Replace('__INSTALLER_NAME__', $installerName)
     $releaseNotes = $releaseNotes.Replace('__CHECKSUMS_NAME__', $checksumsName)
     $releaseNotes = $releaseNotes.Replace('__GUI_VERSION__', $GuiVersion)
     $releaseNotes = $releaseNotes.Replace('__UPSTREAM_VERSION__', $UpstreamVersion)
@@ -534,6 +558,9 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
         ZipName = $zipName
         ZipPath = $zipPath
         ZipSha256 = $zipHash
+        InstallerName = $installerName
+        InstallerPath = $installerPath
+        InstallerSha256 = $installerHash
         ExeName = $exeName
         ExePath = $releaseExePath
         ExeSha256 = $exeHash
@@ -546,6 +573,7 @@ Flowseal repository: https://github.com/Flowseal/zapret-discord-youtube
         -Value (($metadata | ConvertTo-Json -Depth 4) + "`n")
 
     Write-Host "Release package: $zipPath" -ForegroundColor Green
+    Write-Host "Windows installer: $installerPath" -ForegroundColor Green
     Write-Host "Release tag: $tag" -ForegroundColor Green
     Write-Host "Files in ZIP: $($sourceFiles.Count)" -ForegroundColor Green
 }
