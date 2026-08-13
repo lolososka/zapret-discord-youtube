@@ -77,19 +77,32 @@
   };
 
   const parseVersions = (tagName) => {
-    const match = /^gui-v([^-\s]+)-flowseal-v([^-\s]+)(?:-|$)/i.exec(tagName || "");
+    const match = /^gui-v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-flowseal-v([0-9a-z][0-9a-z._+\-]{0,63})-u[0-9a-f]{12}$/i.exec(
+      tagName || ""
+    );
     return match ? { gui: match[1], flowseal: match[2] } : {};
   };
 
-  const choosePortableAsset = (assets) => {
-    const zipAssets = assets.filter((asset) => /\.zip$/i.test(asset.name || ""));
+  const findAssetByName = (assets, expectedName) =>
+    expectedName
+      ? assets.find((asset) => asset.name === expectedName)
+      : undefined;
 
-    return (
-      zipAssets.find((asset) => /win-x64\.zip$/i.test(asset.name)) ||
-      zipAssets.find((asset) => /portable/i.test(asset.name)) ||
-      zipAssets[0]
+  const choosePortableAsset = (assets, versions) =>
+    findAssetByName(
+      assets,
+      versions.gui && versions.flowseal
+        ? `zapret-control-center-${versions.gui}-flowseal-${versions.flowseal}-win-x64.zip`
+        : null
     );
-  };
+
+  const chooseInstallerAsset = (assets, versions) =>
+    findAssetByName(
+      assets,
+      versions.gui && versions.flowseal
+        ? `zapret-control-center-setup-${versions.gui}-flowseal-${versions.flowseal}-win-x64.exe`
+        : null
+    );
 
   const applyRelease = (release) => {
     if (!release || release.draft || release.prerelease || !Array.isArray(release.assets)) {
@@ -97,19 +110,46 @@
     }
 
     const versions = parseVersions(release.tag_name);
-    const portableAsset = choosePortableAsset(release.assets);
+    const installerAsset = chooseInstallerAsset(release.assets, versions);
+    const portableAsset = choosePortableAsset(release.assets, versions);
+    const primaryAsset = installerAsset || portableAsset;
     const checksumAsset = release.assets.find((asset) => /^sha256sums\.txt$/i.test(asset.name || ""));
-    const downloadUrl = portableAsset?.browser_download_url || release.html_url || releasePage;
+    const downloadUrl = primaryAsset?.browser_download_url || release.html_url || releasePage;
+    const portableUrl = portableAsset?.browser_download_url || release.html_url || releasePage;
     const checksumUrl = checksumAsset?.browser_download_url || release.html_url || releasePage;
-    const size = formatSize(portableAsset?.size);
+    const size = formatSize(primaryAsset?.size);
+    const artifactKind = installerAsset
+      ? "Установщик EXE"
+      : portableAsset
+        ? "Portable ZIP"
+        : "GitHub Release";
+    const downloadLabel = installerAsset
+      ? "Скачать установщик"
+      : portableAsset
+        ? "Скачать portable ZIP"
+        : "Открыть релиз";
 
     document.querySelectorAll("[data-download-link]").forEach((link) => {
       link.href = downloadUrl;
       link.setAttribute(
         "aria-label",
-        portableAsset ? `Скачать ${portableAsset.name}` : "Открыть последний релиз"
+        primaryAsset ? `Скачать ${primaryAsset.name}` : "Открыть последний релиз"
       );
     });
+    setText("[data-download-label]", downloadLabel);
+
+    document.querySelectorAll("[data-portable-link]").forEach((link) => {
+      link.href = portableUrl;
+      link.hidden = !(installerAsset && portableAsset);
+      link.setAttribute(
+        "aria-label",
+        portableAsset ? `Скачать portable-сборку ${portableAsset.name}` : "Открыть файлы последнего релиза"
+      );
+    });
+    setText(
+      "[data-portable-label]",
+      portableAsset ? "Portable ZIP без установки" : "Открыть файлы релиза"
+    );
 
     document.querySelectorAll("[data-checksum-link]").forEach((link) => {
       link.href = checksumUrl;
@@ -126,10 +166,8 @@
       setText("[data-flowseal-version]", versions.flowseal);
     }
 
-    if (size) {
-      setText("[data-download-size]", size);
-      setText("[data-release-meta]", `Windows x64 · Portable ZIP · ${size}`);
-    }
+    setText("[data-download-size]", size || "—");
+    setText("[data-release-meta]", `Windows x64 · ${artifactKind}${size ? ` · ${size}` : ""}`);
 
     if (release.published_at) {
       const publishedAt = new Date(release.published_at);

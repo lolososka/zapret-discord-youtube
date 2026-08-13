@@ -14,7 +14,7 @@
   <meta property="og:url" content="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="canonical" href="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="icon" href="./assets/favicon.ico" sizes="any">
-  <link rel="stylesheet" href="./styles.css?v=1">
+  <link rel="stylesheet" href="./styles.css?v=2">
   <title>Zapret Control Center — неофициальный GUI для Flowseal</title>
   <script type="application/ld+json">
   {
@@ -86,7 +86,7 @@
         <a href="#start">Начало работы</a>
         <a href="#faq">FAQ</a>
         <a class="nav-download" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
-          Скачать
+          <span data-download-label>Скачать установщик</span>
         </a>
       </nav>
     </div>
@@ -108,7 +108,11 @@
 
         <div class="hero-actions">
           <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
-            <span>Скачать portable ZIP</span>
+            <span data-download-label>Скачать установщик</span>
+            <span class="button-arrow" aria-hidden="true">↓</span>
+          </a>
+          <a class="button button--quiet" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-portable-link>
+            <span data-portable-label>Portable ZIP без установки</span>
             <span class="button-arrow" aria-hidden="true">↓</span>
           </a>
           <a class="button button--quiet" href="https://github.com/lolososka/zapret-discord-youtube" target="_blank" rel="noreferrer">
@@ -132,7 +136,7 @@
           </div>
           <div>
             <span class="micro-label">РАЗМЕР</span>
-            <strong data-download-size>≈ 60 МБ</strong>
+            <strong data-download-size>≈ 65 МБ</strong>
           </div>
         </div>
       </div>
@@ -167,7 +171,7 @@
         </div>
         <div>
           <span class="signal-index">03</span>
-          <p><strong>Проверенный релиз</strong><br>ZIP, EXE и контрольные суммы</p>
+          <p><strong>Проверенный релиз</strong><br>Установщик, portable ZIP и контрольные суммы</p>
         </div>
       </div>
     </section>
@@ -296,7 +300,7 @@
         <div class="verification-step">
           <span>02</span>
           <strong>SHA-256</strong>
-          <small>Сверка ZIP и EXE</small>
+          <small>Сверка всех файлов релиза</small>
         </div>
         <div class="verification-step">
           <span>03</span>
@@ -316,7 +320,7 @@
           <h3>Релиз собирается после тестов</h3>
           <p>
             Перед публикацией проверяются версия, updater, стратегии,
-            манифест пакета, приватность отчёта и содержимое portable ZIP.
+            манифест пакета, приватность отчёта, установщик и portable ZIP.
           </p>
         </article>
         <article>
@@ -342,29 +346,29 @@
       <div class="shell start-layout">
         <header class="section-heading">
           <span class="kicker">БЫСТРЫЙ СТАРТ / 04</span>
-          <h2>Три шага.<br>Никакой установки.</h2>
+          <h2>Три шага.<br>Без архивов.</h2>
         </header>
 
         <ol class="start-steps">
           <li>
             <span class="step-number">01</span>
             <div>
-              <h3>Скачайте ZIP</h3>
-              <p>Берите portable-сборку только из Releases этого репозитория.</p>
+              <h3>Скачайте установщик</h3>
+              <p>Один EXE уже содержит программу, стратегии и остальные необходимые файлы.</p>
             </div>
           </li>
           <li>
             <span class="step-number">02</span>
             <div>
-              <h3>Распакуйте в новую папку</h3>
-              <p>Для первого запуска не смешивайте файлы с прежней сборкой.</p>
+              <h3>Запустите скачанный EXE</h3>
+              <p>Подтвердите установку — файлы будут размещены автоматически.</p>
             </div>
           </li>
           <li>
             <span class="step-number">03</span>
             <div>
-              <h3>Запустите ZapretGUI.exe</h3>
-              <p>Нужны Windows x64 и права администратора для работы WinDivert.</p>
+              <h3>Откройте готовый ярлык</h3>
+              <p>Zapret Control Center появится в меню «Пуск»; для WinDivert понадобятся права администратора.</p>
             </div>
           </li>
         </ol>
@@ -377,10 +381,10 @@
           <div>
             <span class="micro-label">ПОСЛЕДНИЙ РЕЛИЗ</span>
             <h3 data-release-title>Zapret Control Center 1.12.0</h3>
-            <p data-release-meta>Windows x64 · Portable ZIP · ≈ 60 МБ</p>
+            <p data-release-meta>Windows x64 · Установщик EXE · ≈ 65 МБ</p>
           </div>
           <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
-            Скачать
+            <span data-download-label>Скачать установщик</span>
             <span class="button-arrow" aria-hidden="true">↓</span>
           </a>
           <a class="checksum-link" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-checksum-link>
@@ -413,11 +417,12 @@
           </p>
         </details>
         <details>
-          <summary>Что скачивать: ZIP или отдельный EXE?</summary>
+          <summary>Что скачивать: установщик или portable ZIP?</summary>
           <p>
-            Для первого запуска скачайте portable ZIP и полностью распакуйте его в новую папку.
-            Отдельный EXE предназначен только для ручного обновления уже существующей полной сборки:
-            сам по себе он не содержит стратегии, списки и остальные необходимые файлы.
+            Для обычной установки скачайте setup EXE: он содержит полную сборку, сам размещает файлы
+            и создаёт ярлык. Portable ZIP нужен только если вы хотите запускать программу без установки —
+            его необходимо полностью распаковать. Отдельный <code>ZapretGUI.exe</code> в Assets не является
+            установщиком и предназначен только для ручного обновления уже существующей полной сборки.
           </p>
         </details>
         <details>
@@ -432,14 +437,16 @@
           <p>
             В сборке используется WinDivert — драйвер перехвата и фильтрации
             трафика. Некоторые антивирусы относят такие инструменты к RiskTool.
-            Сверяйте SHA-256 и скачивайте файлы только из официального Releases этого форка.
+            Установщик пока не подписан сертификатом Authenticode, поэтому SmartScreen также может
+            показать «Неизвестный издатель». Сверяйте SHA-256 и скачивайте файлы только из
+            официального Releases этого форка; не подтверждайте запуск файла из другого источника.
           </p>
         </details>
         <details>
           <summary>Мои списки сохранятся после обновления?</summary>
           <p>
-            Portable updater сохраняет пользовательские списки, настройки,
-            флаги и активные fake-пакеты. Перед заменой создаётся резервная копия.
+            Встроенное обновление и повторный запуск установщика не перезаписывают пользовательские
+            списки и настройки. Portable updater дополнительно создаёт резервную копию перед заменой.
           </p>
         </details>
         <details>
@@ -461,7 +468,7 @@
         </div>
         <div class="final-cta__actions">
           <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
-            Скачать portable ZIP
+            <span data-download-label>Скачать установщик</span>
             <span class="button-arrow" aria-hidden="true">↓</span>
           </a>
           <span class="download-note" data-published-note>Последний проверенный релиз</span>
@@ -499,6 +506,6 @@
     </div>
   </footer>
 
-  <script src="./app.js?v=2" defer></script>
+  <script src="./app.js?v=3" defer></script>
 </body>
 </html>

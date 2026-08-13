@@ -1,6 +1,6 @@
-name: 🐛 Проблема GUI или portable-сборки
+name: 🐛 Проблема GUI или установщика
 title: '[Проблема] '
-description: Сообщить об ошибке Zapret Control Center, updater или portable-релиза
+description: Сообщить об ошибке Zapret Control Center, установщика или updater
 labels: ['type: проблема', 'status: нуждается в сортировке']
 
 body:
@@ -34,6 +34,7 @@ body:
     attributes:
       label: Тип установки
       options:
+        - Установщик EXE из релиза форка
         - Portable ZIP из релиза форка
         - Отдельный ZapretGUI.exe в существующей папке
         - Git-клон / сборка из исходников

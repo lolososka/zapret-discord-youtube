@@ -14,14 +14,14 @@
 > стратегий, автоподбора, диагностики, управления службой и пользовательскими списками.
 > Flowseal не связан с этой оболочкой и не одобрял её как официальную сборку.
 > Исходники и инструкция находятся в [`gui/`](./gui/README.md).
-> Готовая portable-сборка: [последний автоматический релиз](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
+> Готовый установщик и portable-сборка: [последний автоматический релиз](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
 > Сайт проекта: [lolososka.github.io/zapret-discord-youtube](https://lolososka.github.io/zapret-discord-youtube/).
 >
 > [![Sync Flowseal upstream](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/sync-upstream.yml)
 > [![GUI CI](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/gui-ci.yml/badge.svg)](https://github.com/lolososka/zapret-discord-youtube/actions/workflows/gui-ci.yml)
 > Изменения оригинального проекта проверяются и переносятся в форк каждые 6 часов.
-> После успешной проверки автоматически собираются ZIP с GUI и отдельный `ZapretGUI.exe`;
-> их SHA-256 опубликованы рядом в `SHA256SUMS.txt`.
+> После успешной проверки автоматически собираются установщик EXE, portable ZIP и отдельный
+> `ZapretGUI.exe`; их SHA-256 опубликованы рядом в `SHA256SUMS.txt`.
 > Начиная с GUI `1.11.0`, portable-сборка умеет безопасно обновляться из этих релизов:
 > сохраняет пользовательские файлы и автоматически откатывается при неудачном запуске.
 > В GUI `1.12.0` добавлены отменяемая диагностика без ложных `OK`, обезличенный
@@ -62,14 +62,16 @@
     * В Windows 11 поддерживается включение Secure DNS прямо в настройках ОС - [инструкция тут](https://remontka.pro/dns-over-https-windows-11/). Рекомендуется, если вы пользуетесь Windows 11
     * Если у вас роутер Keenetic, включите в настройках роутера опцию "Транзит запросов". Отключение этой опции может привести к проблемам при настройке и использовании Secure DNS на компьютере
 
-2. Для сборки с Zapret Control Center скачайте ZIP с `win-x64` со
-   [страницы релизов форка](https://github.com/lolososka/zapret-discord-youtube/releases/latest).
+2. Для сборки с Zapret Control Center скачайте установщик с `setup` и `win-x64` в названии со
+   [страницы релизов форка](https://github.com/lolososka/zapret-discord-youtube/releases/latest)
+   и запустите его. Он сам разместит все файлы и создаст ярлык. Portable ZIP остаётся вариантом
+   без установки, но его нужно полностью распаковать.
    Оригинальная консольная сборка без GUI остаётся в
    [релизах Flowseal](https://github.com/Flowseal/zapret-discord-youtube/releases/latest)
 
-3. Зайдите в свойства скачанного архива и поставьте галочку "Разблокировать". Если вы используете архиватор 7-Zip или PeaZip, этот шаг можно пропустить
+3. Для portable ZIP зайдите в свойства скачанного архива и поставьте галочку "Разблокировать". Если вы используете архиватор 7-Zip или PeaZip, этот шаг можно пропустить
 
-4. Распакуйте содержимое архива по пути, который не содержит кириллицу/спец. символы
+4. При использовании portable ZIP распакуйте содержимое архива по пути, который не содержит кириллицу/спец. символы
 
 5. Запустите нужный файл
 
@@ -142,8 +144,10 @@
 - `service.bat` -> `Remove Services`
 - `service.bat` -> `Run Diagnostics` (если есть ошибки - устраните их) -> в конце Y
 - Удалите папку с запретом
-- Для GUI скачайте новый portable ZIP
+- Для GUI запустите новый установщик
   [со страницы релизов форка](https://github.com/lolososka/zapret-discord-youtube/releases/latest);
+  он обновит программу и сохранит пользовательские списки. Portable ZIP можно использовать
+  для ручной переустановки без установщика;
   оригинальную консольную сборку без GUI можно взять
   [в релизах Flowseal](https://github.com/Flowseal/zapret-discord-youtube/releases)
 - Нажмите пкм по архиву -> свойства. Если снизу справа есть галочка разблокировать, то нажмите на неё -> применить -> ОК

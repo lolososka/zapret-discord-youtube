@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32;
 
 namespace ZapretGui.Core;
 
@@ -49,6 +50,8 @@ public static class PortableUpdateInstaller
     public const string ManifestFileName = "UPDATE_MANIFEST.json";
 
     private const string ServiceName = "zapret";
+    private const string ServiceRegistryPath =
+        @"SYSTEM\CurrentControlSet\Services\zapret";
     private const string IpsetSentinel = "203.0.113.113/32";
     // В ZIP есть ещё сам UPDATE_MANIFEST.json, а распаковщик допускает
     // не более 10 000 записей целиком.
@@ -1117,6 +1120,12 @@ public static class PortableUpdateInstaller
 
     private static bool StopService()
     {
+        // The service name is shared by many portable zapret installations.
+        // Never send a control command until the SCM ImagePath is proven to
+        // target this exact portable tree.
+        if (QueryServiceOwnership() != ServiceOwnership.Owned)
+            return false;
+
         RunSc($"stop {ServiceName}", 30_000);
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
         while (DateTime.UtcNow < deadline)
@@ -1132,6 +1141,9 @@ public static class PortableUpdateInstaller
 
     private static bool StartService()
     {
+        if (QueryServiceOwnership() != ServiceOwnership.Owned)
+            return false;
+
         RunSc($"start {ServiceName}", 30_000);
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
         while (DateTime.UtcNow < deadline)
@@ -1162,6 +1174,12 @@ public static class PortableUpdateInstaller
 
     private static ServiceState QueryServiceState()
     {
+        var ownership = QueryServiceOwnership();
+        if (ownership == ServiceOwnership.NotInstalled)
+            return ServiceState.NotInstalled;
+        if (ownership != ServiceOwnership.Owned)
+            return ServiceState.Unknown;
+
         var query = RunSc($"query {ServiceName}", 10_000);
         if (query.Contains("1060", StringComparison.Ordinal))
             return ServiceState.NotInstalled;
@@ -1176,6 +1194,102 @@ public static class PortableUpdateInstaller
             query.Contains("PAUSED", StringComparison.OrdinalIgnoreCase))
             return ServiceState.Stopped;
         return ServiceState.Unknown;
+    }
+
+    private static ServiceOwnership QueryServiceOwnership()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(
+                ServiceRegistryPath,
+                writable: false);
+            if (key is null)
+                return ServiceOwnership.NotInstalled;
+
+            var imagePath = key.GetValue(
+                "ImagePath",
+                null,
+                RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+            return ServiceImagePathTargetsExecutable(imagePath, AppPaths.WinWs)
+                ? ServiceOwnership.Owned
+                : ServiceOwnership.ForeignOrUnknown;
+        }
+        catch
+        {
+            // Missing permissions, a malformed registry value, and transient
+            // registry failures must all prevent service control operations.
+            return ServiceOwnership.ForeignOrUnknown;
+        }
+    }
+
+    /// <summary>
+    /// Verifies the executable token of an SCM ImagePath without accepting the
+    /// expected path merely because it occurs later in another command line.
+    /// Relative and ambiguously unquoted paths fail closed.
+    /// </summary>
+    public static bool ServiceImagePathTargetsExecutable(
+        string? imagePath,
+        string expectedExecutablePath)
+    {
+        if (string.IsNullOrWhiteSpace(imagePath) ||
+            string.IsNullOrWhiteSpace(expectedExecutablePath))
+            return false;
+
+        var commandLine = imagePath.TrimStart();
+        string executable;
+        if (commandLine[0] == '"')
+        {
+            var closingQuote = commandLine.IndexOf('"', 1);
+            if (closingQuote <= 1)
+                return false;
+            if (closingQuote + 1 < commandLine.Length &&
+                !char.IsWhiteSpace(commandLine[closingQuote + 1]))
+                return false;
+            executable = commandLine[1..closingQuote];
+        }
+        else
+        {
+            var delimiter = -1;
+            for (var i = 0; i < commandLine.Length; i++)
+            {
+                if (!char.IsWhiteSpace(commandLine[i]))
+                    continue;
+                delimiter = i;
+                break;
+            }
+
+            executable = delimiter < 0
+                ? commandLine
+                : commandLine[..delimiter];
+            if (executable.Contains('"', StringComparison.Ordinal))
+                return false;
+        }
+
+        try
+        {
+            executable = Environment.ExpandEnvironmentVariables(executable);
+            var expected = Environment.ExpandEnvironmentVariables(
+                expectedExecutablePath);
+            if (!Path.IsPathFullyQualified(executable) ||
+                !Path.IsPathFullyQualified(expected))
+                return false;
+
+            return string.Equals(
+                Path.GetFullPath(executable),
+                Path.GetFullPath(expected),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private enum ServiceOwnership
+    {
+        NotInstalled,
+        Owned,
+        ForeignOrUnknown
     }
 
     private static string RunSc(string arguments, int timeoutMs)

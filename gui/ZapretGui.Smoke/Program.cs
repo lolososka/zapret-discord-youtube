@@ -32,6 +32,7 @@ internal static class Program
             else if (args.Length == 0)
             {
                 RunVersionPolicySmoke();
+                RunServiceOwnershipSmoke();
                 RunStrategyParserSmoke();
                 await RunConnectivityPolicySmokeAsync();
                 RunStrategyHistorySmoke();
@@ -134,6 +135,52 @@ internal static class Program
                 remoteTag.ToUpperInvariant()).Reason ==
             PortableUpdateReason.None,
             "The same installed release tag must not offer an update.");
+    }
+
+    private static void RunServiceOwnershipSmoke()
+    {
+        const string expected = @"C:\Program Files\Zapret Control Center\runtime\bin\winws.exe";
+        const string compact = @"C:\Zapret\bin\winws.exe";
+
+        foreach (var owned in new[]
+                 {
+                     $"\"{expected}\" --wf-tcp=80,443 --filter-tcp=443",
+                     $"  \"{expected.ToUpperInvariant()}\"\t--wf-udp=443",
+                     compact,
+                     compact + " --wf-tcp=443",
+                     "\"C:\\Program Files\\Zapret Control Center\\runtime\\bin\\..\\bin\\winws.exe\" --filter-tcp=443"
+                 })
+        {
+            Check(
+                PortableUpdateInstaller.ServiceImagePathTargetsExecutable(
+                    owned,
+                    owned.Contains(@"C:\Zapret", StringComparison.Ordinal)
+                        ? compact
+                        : expected),
+                "An exact zapret service executable must be recognized: " +
+                owned);
+        }
+
+        foreach (var foreign in new string?[]
+                 {
+                     null,
+                     string.Empty,
+                     "winws.exe --wf-tcp=443",
+                     expected + " --wf-tcp=443",
+                     $"\"{expected}.old\" --wf-tcp=443",
+                     $"\"C:\\Tools\\wrapper.exe\" --child=\"{expected}\"",
+                     $"\"{expected}",
+                     $"\"{expected}\"--wf-tcp=443",
+                     $"C:\\Tools\\runner.exe --payload=\"{expected}\""
+                 })
+        {
+            Check(
+                !PortableUpdateInstaller.ServiceImagePathTargetsExecutable(
+                    foreign,
+                    expected),
+                "A foreign or ambiguous service command must be rejected: " +
+                (foreign ?? "<null>"));
+        }
     }
 
     private static void RunStrategyParserSmoke()

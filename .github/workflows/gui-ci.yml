@@ -70,7 +70,7 @@ jobs:
             throw "GUI publish failed with exit code $LASTEXITCODE."
           }
 
-      - name: Build and validate the portable package
+      - name: Build and validate the Windows release
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -96,6 +96,7 @@ jobs:
           $metadata = Get-Content -LiteralPath $metadataPath -Raw |
             ConvertFrom-Json
           foreach ($path in @(
+            $metadata.InstallerPath,
             $metadata.ZipPath,
             $metadata.ExePath,
             $metadata.ChecksumsPath
@@ -119,3 +120,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged ZIP validation failed with exit code $LASTEXITCODE."
           }
+
+          & ./gui/test-installer.ps1 `
+            -InstallerPath $metadata.InstallerPath `
+            -GuiVersion $metadata.GuiVersion `
+            -UpstreamVersion $metadata.UpstreamVersion `
+            -Tag $metadata.Tag
