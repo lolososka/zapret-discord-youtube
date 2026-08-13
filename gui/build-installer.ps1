@@ -44,10 +44,6 @@ function Resolve-InnoCompiler {
     if (-not [string]::IsNullOrWhiteSpace($env:INNO_SETUP_COMPILER)) {
         $candidates += $env:INNO_SETUP_COMPILER
     }
-    $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-    if ($null -ne $command) {
-        $candidates += $command.Source
-    }
     if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         $candidates += Join-Path `
             $env:LOCALAPPDATA `
@@ -57,6 +53,13 @@ function Resolve-InnoCompiler {
         'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
         'C:\Program Files\Inno Setup 6\ISCC.exe'
     )
+    # GitHub-hosted Windows runners expose a Chocolatey shim named ISCC.exe.
+    # Prefer the real signed compiler in its installation directory so the
+    # identity check below validates Inno Setup rather than shimgen.exe.
+    $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        $candidates += $command.Source
+    }
 
     foreach ($candidate in $candidates) {
         if (-not [string]::IsNullOrWhiteSpace($candidate) -and
