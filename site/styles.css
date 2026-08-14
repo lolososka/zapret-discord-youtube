@@ -354,14 +354,6 @@ code {
   content: "";
 }
 
-.hero-lead {
-  max-width: 690px;
-  margin: 36px auto 0;
-  color: var(--ink-soft);
-  font-size: clamp(1.05rem, 1.45vw, 1.28rem);
-  line-height: 1.6;
-}
-
 .hero-actions {
   display: flex;
   margin-top: 36px;
@@ -567,38 +559,28 @@ code {
   line-height: 0.97;
 }
 
-.section-heading > p:last-child {
-  max-width: 520px;
-  margin: 28px 0 0;
-  color: var(--muted);
-  font-size: 1.02rem;
-  line-height: 1.7;
-}
-
 .section--inside {
   display: grid;
   grid-template-columns: minmax(300px, 0.82fr) minmax(520px, 1.18fr);
+  align-items: start;
   gap: clamp(60px, 9vw, 140px);
 }
 
 .capability-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
   border-top: 1px solid var(--line-strong);
 }
 
-.capability-list article {
+.capability-list li {
   display: grid;
-  padding: 30px 10px 30px 0;
-  grid-template-columns: 46px minmax(220px, 0.9fr) minmax(260px, 1.1fr);
-  align-items: start;
-  gap: 20px;
+  min-height: 76px;
+  padding: 21px 0;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
   border-bottom: 1px solid var(--line);
-  transition: padding 170ms ease, background-color 170ms ease;
-}
-
-.capability-list article:hover {
-  padding-right: 18px;
-  padding-left: 12px;
-  background: rgba(251, 250, 247, 0.72);
 }
 
 .capability-mark {
@@ -617,18 +599,10 @@ code {
 .capability-mark--rose { color: var(--rose); }
 .capability-mark--amber { color: var(--amber); }
 
-.capability-list h3 {
-  margin: 3px 0 0;
-  font-size: 1.02rem;
-  font-weight: 700;
+.capability-list strong {
+  font-size: clamp(1rem, 1.3vw, 1.15rem);
+  font-weight: 650;
   line-height: 1.35;
-}
-
-.capability-list p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 0.91rem;
-  line-height: 1.65;
 }
 
 .interface-section {
@@ -639,23 +613,11 @@ code {
 }
 
 .interface-heading {
-  display: grid;
   margin-bottom: clamp(44px, 6vw, 80px);
-  grid-template-columns: 1.1fr 0.9fr;
-  align-items: end;
-  gap: 80px;
 }
 
 .interface-heading .section-label {
   color: #9188ff;
-}
-
-.interface-heading > p {
-  max-width: 520px;
-  margin: 0 0 8px;
-  color: var(--night-muted);
-  font-size: 1rem;
-  line-height: 1.75;
 }
 
 .app-frame {
@@ -749,12 +711,6 @@ code {
   font-size: clamp(3rem, 4.6vw, 5.4rem);
 }
 
-.lists-copy > p:not(.section-label) {
-  margin: 30px 0 0;
-  color: var(--muted);
-  line-height: 1.75;
-}
-
 .plain-list {
   padding: 0;
   margin: 32px 0 0;
@@ -817,32 +773,6 @@ code {
 .update-route strong {
   display: block;
   font-size: 1rem;
-}
-
-.evidence-row {
-  display: grid;
-  margin-top: clamp(70px, 8vw, 110px);
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--line-strong);
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.evidence-row article {
-  padding: 28px clamp(20px, 3vw, 42px);
-  border-right: 1px solid var(--line-strong);
-}
-
-.evidence-row article:first-child {
-  padding-left: 0;
-}
-
-.evidence-row article:last-child {
-  padding-right: 0;
-  border-right: 0;
-}
-
-.evidence-row strong {
-  font-size: 0.9rem;
 }
 
 .install-section {
@@ -1105,8 +1035,8 @@ code {
     gap: 58px;
   }
 
-  .section-heading > p:last-child {
-    max-width: 650px;
+  .section--inside {
+    gap: 40px;
   }
 
   .lists-section {
@@ -1191,33 +1121,12 @@ code {
     gap: 10px;
   }
 
-  .interface-heading,
   .lists-section {
     grid-template-columns: 1fr;
   }
 
-  .interface-heading {
-    gap: 32px;
-  }
-
   .lists-copy {
     max-width: 640px;
-  }
-
-  .evidence-row {
-    grid-template-columns: 1fr;
-  }
-
-  .evidence-row article,
-  .evidence-row article:first-child,
-  .evidence-row article:last-child {
-    padding: 24px 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--line-strong);
-  }
-
-  .evidence-row article:last-child {
-    border-bottom: 0;
   }
 
   .footer-grid {
@@ -1261,11 +1170,6 @@ code {
     line-height: 0.94;
   }
 
-  .hero-lead {
-    margin-top: 28px;
-    font-size: 0.98rem;
-  }
-
   .hero-actions {
     display: grid;
     width: 100%;
@@ -1305,19 +1209,11 @@ code {
     font-size: clamp(2.75rem, 13vw, 4.2rem);
   }
 
-  .capability-list article {
-    grid-template-columns: 38px 1fr;
-    gap: 14px;
-  }
-
-  .capability-list article:hover {
-    padding-right: 0;
-    padding-left: 0;
-    background: transparent;
-  }
-
-  .capability-list p {
-    grid-column: 2;
+  .capability-list li {
+    min-height: 68px;
+    padding: 18px 0;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 12px;
   }
 
   .app-frame {
