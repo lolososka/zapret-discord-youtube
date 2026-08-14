@@ -47,6 +47,333 @@
   updateHeader();
   window.addEventListener("scroll", updateHeader, { passive: true });
 
+  const initializePacketField = () => {
+    const canvas = document.querySelector("[data-packet-field]");
+    const surface = canvas?.closest("[data-field-surface]");
+    if (!canvas || !surface) return;
+
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) return;
+
+    const colors = ["#5B63FF", "#2667FF", "#F04F78", "#F59E0B", "#7856B8"];
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const finePointer = window.matchMedia("(any-pointer: fine)");
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const hasAnimationFrame = typeof window.requestAnimationFrame === "function";
+    const quietElements = Array.from(surface.querySelectorAll("[data-field-quiet]"));
+    const pointer = {
+      active: false,
+      targetX: 0,
+      targetY: 0,
+      x: 0,
+      y: 0,
+      strength: 0
+    };
+
+    let width = 0;
+    let height = 0;
+    let particles = [];
+    let quietZones = [];
+    let elapsed = 0;
+    let lastFrame = 0;
+    let frameRequest = 0;
+    let resizeTimer = 0;
+    let fieldIsVisible = true;
+    let staticField = false;
+
+    const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+
+    const createRandom = (seed) => {
+      let state = seed >>> 0;
+      return () => {
+        state += 0x6d2b79f5;
+        let value = state;
+        value = Math.imul(value ^ (value >>> 15), value | 1);
+        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+
+    const shouldUseStaticField = () =>
+      !hasAnimationFrame || reducedMotion.matches || !finePointer.matches || Boolean(connection?.saveData);
+
+    const particleCount = () => {
+      const area = width * height;
+      return staticField
+        ? clamp(Math.round(area / 26000), 36, 54)
+        : clamp(Math.round(area / 5600), 90, 220);
+    };
+
+    const buildParticles = () => {
+      const dimensionSeed = (Math.round(width) * 73856093) ^ (Math.round(height) * 19349663);
+      const random = createRandom(0x5a17c0de ^ dimensionSeed);
+      const count = particleCount();
+      const trackWidth = width + 96;
+
+      particles = Array.from({ length: count }, (_, index) => ({
+        originX: random() * trackWidth - 48,
+        laneY: random() * height,
+        speed: 11 + random() * 21,
+        length: 4.5 + random() * 9,
+        lineWidth: 1.2 + random() * 1.35,
+        alpha: 0.28 + random() * 0.38,
+        wave: 1.5 + random() * 7,
+        frequency: 0.004 + random() * 0.006,
+        phase: random() * Math.PI * 2,
+        routeSide: index % 2 === 0 ? -1 : 1,
+        color: colors[Math.floor(random() * colors.length)]
+      }));
+    };
+
+    const measureQuietZones = (canvasRect) => {
+      quietZones = quietElements
+        .filter((element) => element.getClientRects().length > 0)
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            left: rect.left - canvasRect.left,
+            right: rect.right - canvasRect.left,
+            top: rect.top - canvasRect.top,
+            bottom: rect.bottom - canvasRect.top
+          };
+        });
+    };
+
+    const baseYAt = (particle, x) =>
+      particle.laneY + Math.sin(x * particle.frequency + particle.phase) * particle.wave;
+
+    const routeAroundQuietZones = (x, startingY, particle) => {
+      let y = startingY;
+
+      quietZones.forEach((zone) => {
+        const shoulder = clamp((zone.right - zone.left) * 0.16, 52, 116);
+        const routeStart = zone.left - shoulder;
+        const routeEnd = zone.right + shoulder;
+        if (x <= routeStart || x >= routeEnd) return;
+
+        const envelope = x < zone.left
+          ? Math.sin(((x - routeStart) / shoulder) * (Math.PI / 2)) ** 2
+          : x > zone.right
+            ? Math.sin(((routeEnd - x) / shoulder) * (Math.PI / 2)) ** 2
+            : 1;
+        const padding = 22;
+        const top = zone.top - padding;
+        const bottom = zone.bottom + padding;
+        if (y <= top - 26 || y >= bottom + 26) return;
+
+        const center = (top + bottom) / 2;
+        const laneDistance = particle.laneY - center;
+        const side = Math.abs(laneDistance) > 10 ? Math.sign(laneDistance) : particle.routeSide;
+        const target = side < 0 ? top : bottom;
+        y += (target - y) * envelope;
+      });
+
+      return y;
+    };
+
+    const routeAroundPointer = (x, startingY, particle) => {
+      if (pointer.strength <= 0.001) return startingY;
+
+      const horizontalReach = 190;
+      const distanceX = Math.abs(x - pointer.x);
+      if (distanceX >= horizontalReach) return startingY;
+
+      const channelRadius = 125;
+      const envelope = Math.cos((distanceX / horizontalReach) * (Math.PI / 2));
+      const clearance = (channelRadius + 8) * envelope ** 0.72 * pointer.strength;
+      const routedDistanceY = startingY - pointer.y;
+      if (Math.abs(routedDistanceY) >= clearance) return startingY;
+
+      const laneDistanceY = particle.laneY - pointer.y;
+      const side = Math.abs(laneDistanceY) > 9 ? Math.sign(laneDistanceY) : particle.routeSide;
+      return pointer.y + side * clearance;
+    };
+
+    const routedYAt = (particle, x) => {
+      const baseY = baseYAt(particle, x);
+      return routeAroundPointer(x, routeAroundQuietZones(x, baseY, particle), particle);
+    };
+
+    const draw = () => {
+      context.clearRect(0, 0, width, height);
+      context.save();
+      context.globalCompositeOperation = "multiply";
+      context.lineCap = "round";
+
+      const trackWidth = width + 96;
+      particles.forEach((particle) => {
+        const travel = staticField ? 0 : elapsed * particle.speed;
+        const x = ((particle.originX + travel + 48) % trackWidth) - 48;
+        const endX = x + particle.length;
+        const y = routedYAt(particle, x);
+        const endY = routedYAt(particle, endX);
+
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(endX, endY);
+        context.strokeStyle = particle.color;
+        context.lineWidth = particle.lineWidth;
+        context.globalAlpha = particle.alpha;
+        context.stroke();
+      });
+
+      context.restore();
+    };
+
+    const updatePointer = (deltaSeconds) => {
+      const targetStrength = pointer.active && !staticField ? 1 : 0;
+      const strengthBlend = 1 - Math.exp(-8 * deltaSeconds);
+      const positionBlend = 1 - Math.exp(-11 * deltaSeconds);
+      pointer.strength += (targetStrength - pointer.strength) * strengthBlend;
+
+      if (pointer.active && !staticField) {
+        pointer.x += (pointer.targetX - pointer.x) * positionBlend;
+        pointer.y += (pointer.targetY - pointer.y) * positionBlend;
+      }
+    };
+
+    const frame = (timestamp) => {
+      frameRequest = 0;
+      if (staticField || !fieldIsVisible || document.hidden) return;
+
+      let deltaSeconds = 1 / 60;
+      if (lastFrame) {
+        const deltaMilliseconds = timestamp - lastFrame;
+        if (deltaMilliseconds < 15.5) {
+          frameRequest = window.requestAnimationFrame(frame);
+          return;
+        }
+        deltaSeconds = Math.min(deltaMilliseconds / 1000, 0.05);
+        elapsed += deltaSeconds;
+      }
+      lastFrame = timestamp;
+      updatePointer(deltaSeconds);
+      draw();
+      frameRequest = window.requestAnimationFrame(frame);
+    };
+
+    const syncPlayback = () => {
+      const shouldPlay = !staticField && fieldIsVisible && !document.hidden;
+      if (shouldPlay && !frameRequest) {
+        lastFrame = 0;
+        frameRequest = window.requestAnimationFrame(frame);
+      } else if (!shouldPlay && frameRequest) {
+        window.cancelAnimationFrame(frameRequest);
+        frameRequest = 0;
+        lastFrame = 0;
+      }
+    };
+
+    const resize = () => {
+      resizeTimer = 0;
+      const canvasRect = canvas.getBoundingClientRect();
+      const nextWidth = Math.round(canvasRect.width);
+      const nextHeight = Math.round(canvasRect.height);
+      if (nextWidth < 1 || nextHeight < 1) return;
+
+      width = nextWidth;
+      height = nextHeight;
+      const cssPixels = width * height;
+      const pixelBudgetRatio = Math.sqrt(6000000 / Math.max(cssPixels, 1));
+      const pixelRatio = Math.max(0.75, Math.min(window.devicePixelRatio || 1, 1.5, pixelBudgetRatio));
+      canvas.width = Math.round(width * pixelRatio);
+      canvas.height = Math.round(height * pixelRatio);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+      staticField = shouldUseStaticField();
+      measureQuietZones(canvasRect);
+      buildParticles();
+      draw();
+      surface.classList.add("field-ready");
+      surface.classList.toggle("field-interactive", !staticField);
+      syncPlayback();
+    };
+
+    const scheduleResize = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(resize, 100);
+    };
+
+    const updateMotionMode = () => {
+      const nextStaticField = shouldUseStaticField();
+      if (nextStaticField === staticField) return;
+      staticField = nextStaticField;
+      buildParticles();
+      pointer.active = false;
+      pointer.strength = 0;
+      draw();
+      surface.classList.toggle("field-interactive", !staticField);
+      syncPlayback();
+    };
+
+    const updatePointerTarget = (event) => {
+      if (staticField || !event.isPrimary || event.pointerType === "touch") return;
+
+      const rect = canvas.getBoundingClientRect();
+      pointer.targetX = event.clientX - rect.left;
+      pointer.targetY = event.clientY - rect.top;
+      if (!pointer.active) {
+        pointer.x = pointer.targetX;
+        pointer.y = pointer.targetY;
+      }
+      pointer.active = true;
+    };
+
+    const clearPointer = () => {
+      pointer.active = false;
+    };
+
+    surface.addEventListener("pointermove", updatePointerTarget, { passive: true });
+    surface.addEventListener("pointerleave", clearPointer, { passive: true });
+    surface.addEventListener("pointercancel", clearPointer, { passive: true });
+    document.addEventListener("visibilitychange", syncPlayback);
+
+    reducedMotion.addEventListener?.("change", updateMotionMode);
+    finePointer.addEventListener?.("change", updateMotionMode);
+    connection?.addEventListener?.("change", updateMotionMode);
+
+    const resizeObserver = typeof ResizeObserver === "function"
+      ? new ResizeObserver(scheduleResize)
+      : null;
+    resizeObserver?.observe(surface);
+    quietElements.forEach((element) => resizeObserver?.observe(element));
+    window.addEventListener("resize", scheduleResize, { passive: true });
+
+    const intersectionObserver = typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(([entry]) => {
+          fieldIsVisible = Boolean(entry?.isIntersecting);
+          syncPlayback();
+        }, { rootMargin: "120px" })
+      : null;
+    intersectionObserver?.observe(surface);
+
+    document.fonts?.ready.then(scheduleResize).catch(() => {});
+    resize();
+
+    window.addEventListener("pagehide", (event) => {
+      window.clearTimeout(resizeTimer);
+      if (frameRequest) window.cancelAnimationFrame(frameRequest);
+      frameRequest = 0;
+      lastFrame = 0;
+      if (!event.persisted) {
+        resizeObserver?.disconnect();
+        intersectionObserver?.disconnect();
+      }
+    });
+
+    window.addEventListener("pageshow", (event) => {
+      if (!event.persisted) return;
+      scheduleResize();
+      syncPlayback();
+    });
+  };
+
+  try {
+    initializePacketField();
+  } catch {
+    // The download and release UI remains fully functional without the ambient canvas.
+  }
+
   const faqItems = Array.from(document.querySelectorAll(".faq-list details"));
   faqItems.forEach((item) => {
     item.addEventListener("toggle", () => {
