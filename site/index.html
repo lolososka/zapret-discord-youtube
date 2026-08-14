@@ -14,7 +14,7 @@
   <meta property="og:url" content="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="canonical" href="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="icon" href="./assets/favicon.ico" sizes="any">
-  <link rel="stylesheet" href="./styles.css?v=5">
+  <link rel="stylesheet" href="./styles.css?v=6">
   <title>Zapret Control Center — GUI для Flowseal</title>
   <script type="application/ld+json">
   {
@@ -102,8 +102,6 @@
         <div class="hero-copy">
           <p class="hero-kicker"><span aria-hidden="true"></span> Неофициальный GUI для Flowseal · Windows 10/11</p>
           <h1>Управляйте <em>zapret</em>,<br>а не BAT‑файлами.</h1>
-          <p class="hero-lead">Практично и быстро.</p>
-
           <div class="hero-actions">
             <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
               <span class="button-platform" aria-hidden="true">⊞</span>
@@ -147,35 +145,30 @@
       </div>
     </aside>
 
-    <section class="section section--inside shell" id="inside">
+    <section class="section section--inside shell" id="inside" aria-labelledby="inside-title">
       <header class="section-heading">
         <p class="section-label">Что внутри</p>
-        <h2>Не нужно помнить,<br>какой BAT‑файл сработал.</h2>
-        <p>Выберите стратегию, запустите её и смотрите состояние в одном окне.</p>
+        <h2 id="inside-title">Не нужно помнить,<br>какой BAT‑файл сработал.</h2>
       </header>
 
-      <div class="capability-list">
-        <article>
+      <ul class="capability-list" role="list">
+        <li>
           <span class="capability-mark capability-mark--violet" aria-hidden="true">●</span>
-          <h3>Запустить и понять, что работает</h3>
-          <p>На главном экране видны активная стратегия, процесс, служба, скорость и последние события.</p>
-        </article>
-        <article>
+          <strong>Состояние zapret</strong>
+        </li>
+        <li>
           <span class="capability-mark capability-mark--blue" aria-hidden="true">↻</span>
-          <h3>Сменить стратегию без ручной остановки</h3>
-          <p>Программа аккуратно переключает работающий профиль и сразу сообщает результат.</p>
-        </article>
-        <article>
+          <strong>Смена стратегии без остановки</strong>
+        </li>
+        <li>
           <span class="capability-mark capability-mark--rose" aria-hidden="true">⌁</span>
-          <h3>Проверить соединение</h3>
-          <p>Диагностика отличает успешную проверку от ошибки, тайм-аута или ответа, которому нельзя доверять.</p>
-        </article>
-        <article>
+          <strong>Диагностика соединения</strong>
+        </li>
+        <li>
           <span class="capability-mark capability-mark--amber" aria-hidden="true">＋</span>
-          <h3>Добавить свои домены и исключения</h3>
-          <p>Редактор предупредит о несохранённых изменениях и не затронет служебные списки.</p>
-        </article>
-      </div>
+          <strong>Домены и исключения</strong>
+        </li>
+      </ul>
     </section>
 
     <section class="interface-section" id="interface">
@@ -183,12 +176,8 @@
         <header class="interface-heading">
           <div>
             <p class="section-label">Интерфейс</p>
-            <h2>Всё важное<br>видно сразу.</h2>
+            <h2>Главный экран.</h2>
           </div>
-          <p>
-            Главный экран показывает состояние zapret и трафик. Стратегии,
-            диагностика, списки, журнал и настройки разложены по отдельным разделам.
-          </p>
         </header>
 
         <figure class="app-frame">
@@ -216,11 +205,7 @@
       </figure>
       <div class="lists-copy">
         <p class="section-label">Свои правила</p>
-        <h2>Ваши списки остаются вашими.</h2>
-        <p>
-          Добавляйте сайты и исключения через обычный редактор. Программа не смешивает
-          пользовательские записи со служебными файлами Flowseal и не даёт закрыть несохранённый список молча.
-        </p>
+        <h2>Сайты и исключения.</h2>
         <ul class="plain-list">
           <li>Домены и IP в отдельных вкладках</li>
           <li>Защита несохранённых изменений</li>
@@ -244,11 +229,6 @@
         </ol>
       </div>
 
-      <div class="shell evidence-row">
-        <article><strong>Сборка проходит тесты</strong></article>
-        <article><strong>Отчёт не забирает списки</strong></article>
-        <article><strong>Flowseal проверяется отдельно</strong></article>
-      </div>
     </section>
 
     <section class="install-section" id="install">
@@ -282,7 +262,7 @@
     <section class="section faq-section shell" id="faq">
       <header class="section-heading">
         <p class="section-label">Вопросы</p>
-        <h2>Короткие ответы<br>до установки.</h2>
+        <h2>Перед установкой.</h2>
       </header>
 
       <div class="faq-list">
@@ -343,6 +323,6 @@
     </div>
   </footer>
 
-  <script src="./app.js?v=5" defer></script>
+  <script src="./app.js?v=6" defer></script>
 </body>
 </html>

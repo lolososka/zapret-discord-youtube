@@ -172,42 +172,28 @@
       return y;
     };
 
-    const warpAroundPointer = (x, y, particle) => {
+    const warpAroundPointer = (x, y) => {
       if (pointer.strength <= 0.001) return { x, y, influence: 0 };
 
-      const deltaX = x - pointer.x;
-      const deltaY = y - pointer.y;
-      const radius = clamp(Math.min(width, height) * 0.3, 240, 340);
-      const core = clamp(radius * 0.23, 58, 78);
-      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
-      if (distanceSquared >= radius * radius) return { x, y, influence: 0 };
+      const towardX = pointer.x - x;
+      const towardY = pointer.y - y;
+      const radius = clamp(Math.min(width, height) * 0.34, 260, 380);
+      const radiusSquared = radius * radius;
+      const distanceSquared = towardX * towardX + towardY * towardY;
+      if (distanceSquared >= radiusSquared) return { x, y, influence: 0 };
 
-      const distance = Math.sqrt(Math.max(distanceSquared, 0.0001));
-      const normalX = distanceSquared > 0.0001 ? deltaX / distance : 0;
-      const normalY = distanceSquared > 0.0001 ? deltaY / distance : particle.routeSide;
-      let shift = 0;
-
-      if (distance < core) {
-        const coreProgress = 1 - distance / core;
-        const targetRadius = core + 12 * coreProgress * coreProgress;
-        shift = targetRadius - distance;
-      } else {
-        const ringProgress = (distance - core) / (radius - core);
-        const magneticBell = 16 * ringProgress * ringProgress * (1 - ringProgress) * (1 - ringProgress);
-        const pull = clamp(radius * 0.17, 40, 58);
-        shift = -pull * magneticBell;
-      }
-
-      shift *= pointer.strength;
+      const edge = 1 - distanceSquared / radiusSquared;
+      const influence = edge * edge;
+      const gain = 0.62 * pointer.strength * influence;
       return {
-        x: x + normalX * shift,
-        y: y + normalY * shift,
-        influence: 1 - distance / radius
+        x: x + towardX * gain,
+        y: y + towardY * gain,
+        influence
       };
     };
 
     const pointAt = (particle, x) => {
-      const warped = warpAroundPointer(x, baseYAt(particle, x), particle);
+      const warped = warpAroundPointer(x, baseYAt(particle, x));
       return {
         x: warped.x,
         y: routeAroundQuietZones(warped.x, warped.y, particle),
@@ -236,8 +222,8 @@
         context.moveTo(start.x, start.y);
         context.lineTo(end.x, end.y);
         context.strokeStyle = particle.color;
-        context.lineWidth = particle.lineWidth * (1 + influence * 0.08);
-        context.globalAlpha = Math.min(1, particle.alpha * (1 + influence * 0.18));
+        context.lineWidth = particle.lineWidth * (1 + influence * 0.03);
+        context.globalAlpha = Math.min(1, particle.alpha * (1 + influence * 0.08));
         context.stroke();
       });
 
