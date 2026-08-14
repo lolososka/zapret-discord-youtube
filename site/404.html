@@ -3,54 +3,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#05070a">
+  <meta name="theme-color" content="#f7f8fb">
+  <meta name="color-scheme" content="light">
   <meta name="robots" content="noindex">
   <title>Страница не найдена — Zapret Control Center</title>
   <style>
-    :root { color-scheme: dark; font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+      --paper: #f7f8fb;
+      --ink: #111318;
+      --muted: #687180;
+      --line: #dce1e9;
+      --violet: #6255f5;
+    }
     * { box-sizing: border-box; }
     body {
       display: grid;
       min-height: 100svh;
       margin: 0;
       place-items: center;
-      background: #05070a;
-      color: #eaeff6;
+      overflow-x: hidden;
+      overflow-y: auto;
+      background: var(--paper);
+      color: var(--ink);
     }
+    body::before,
+    body::after {
+      position: fixed;
+      width: 8px;
+      height: 42vw;
+      max-height: 430px;
+      border-radius: 999px;
+      content: "";
+    }
+    body::before { top: -8vw; left: 18vw; transform: rotate(57deg); background: #2667ff; }
+    body::after { right: 15vw; bottom: -9vw; transform: rotate(57deg); background: #ef4f78; }
     main {
-      width: min(560px, calc(100% - 32px));
-      padding: 44px;
-      border: 1px solid #262d37;
-      background: #090c11;
+      width: min(650px, calc(100% - 32px));
+      padding: clamp(34px, 7vw, 74px);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: 0 30px 90px rgba(28, 35, 48, 0.1);
+      text-align: center;
+      backdrop-filter: blur(18px);
     }
     span {
-      color: #8b57ff;
-      font: 600 0.7rem "Cascadia Mono", Consolas, monospace;
-      letter-spacing: 0.14em;
-    }
-    h1 { margin: 18px 0 12px; font-size: clamp(2.4rem, 9vw, 4.2rem); line-height: 1; letter-spacing: -0.055em; }
-    p { margin: 0 0 28px; color: #94a1b2; line-height: 1.65; }
-    a {
-      display: inline-flex;
-      min-height: 48px;
-      padding: 0 18px;
-      align-items: center;
-      border: 1px solid #6e5cff;
-      background: #6e5cff;
-      color: #fff;
-      font-size: 0.78rem;
-      font-weight: 700;
-      letter-spacing: 0.05em;
-      text-decoration: none;
+      color: var(--violet);
+      font: 650 0.68rem "Cascadia Mono", Consolas, monospace;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
     }
+    h1 {
+      margin: 22px 0 16px;
+      font: 400 clamp(3.2rem, 10vw, 6.2rem)/0.95 Bahnschrift, "Arial Narrow", Arial, sans-serif;
+      letter-spacing: -0.06em;
+    }
+    p { max-width: 390px; margin: 0 auto 32px; color: var(--muted); line-height: 1.65; }
+    a {
+      display: inline-flex;
+      min-height: 50px;
+      padding: 0 22px;
+      align-items: center;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    a:focus-visible { outline: 3px solid #2667ff; outline-offset: 4px; }
   </style>
 </head>
 <body>
   <main>
-    <span>ERROR / 404</span>
-    <h1>Сигнал потерян.</h1>
-    <p>Такой страницы нет. Вернитесь в центр управления — там всё на своих местах.</p>
+    <span>Ошибка 404</span>
+    <h1>Здесь ничего нет.</h1>
+    <p>Адрес ведёт на страницу, которой не существует. Вернитесь к программе и последнему релизу.</p>
     <a href="/zapret-discord-youtube/">На главную</a>
   </main>
 </body>
