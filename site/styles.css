@@ -629,8 +629,7 @@ code {
   box-shadow: 0 44px 100px rgba(0, 0, 0, 0.38);
 }
 
-.app-frame__bar,
-.app-frame figcaption {
+.app-frame__bar {
   display: flex;
   min-height: 50px;
   padding: 0 20px;
@@ -662,10 +661,6 @@ code {
 .app-frame__screen img {
   width: 100%;
   height: auto;
-}
-
-.app-frame figcaption {
-  min-height: 56px;
 }
 
 .lists-section {
@@ -1222,14 +1217,12 @@ code {
     border-radius: 12px;
   }
 
-  .app-frame__bar,
-  .app-frame figcaption {
+  .app-frame__bar {
     padding-inline: 12px;
     font-size: 0.53rem;
   }
 
-  .app-frame__bar span:last-child,
-  .app-frame figcaption span:last-child {
+  .app-frame__bar span:last-child {
     display: none;
   }
 
