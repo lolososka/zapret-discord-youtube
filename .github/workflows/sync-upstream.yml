@@ -674,6 +674,25 @@ jobs:
             return $objectSha
           }
 
+          function Wait-TagCommit {
+            param(
+              [Parameter(Mandatory)][string]$Repository,
+              [Parameter(Mandatory)][string]$Tag
+            )
+            # A newly created Git ref can briefly return 404 from another
+            # GitHub API edge even though the create request succeeded.
+            for ($attempt = 1; $attempt -le 10; $attempt++) {
+              $commit = Resolve-TagCommit `
+                -Repository $Repository `
+                -Tag $Tag
+              if ($null -ne $commit) {
+                return $commit
+              }
+              Start-Sleep -Seconds 2
+            }
+            return $null
+          }
+
           function Test-ReleaseAsset {
             param(
               [Parameter(Mandatory)]$Asset,
@@ -1119,7 +1138,7 @@ jobs:
               -f "sha=$($metadata.ForkCommit)" `
               2>$null
             $createTagExitCode = $LASTEXITCODE
-            $tagCommit = Resolve-TagCommit `
+            $tagCommit = Wait-TagCommit `
               -Repository $repo `
               -Tag $metadata.Tag
             if (
