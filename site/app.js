@@ -55,7 +55,7 @@
     const context = canvas.getContext("2d", { alpha: true });
     if (!context) return;
 
-    const colors = ["#5B63FF", "#2667FF", "#F04F78", "#F59E0B", "#7856B8"];
+    const colors = ["#7454E8", "#365FA8", "#B85F76", "#A87D46", "#777169"];
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const finePointer = window.matchMedia("(any-pointer: fine)");
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -75,7 +75,8 @@
     let particles = [];
     let quietZones = [];
     let elapsed = 0;
-    let lastFrame = 0;
+    let cadenceFrame = null;
+    let lastDraw = null;
     let frameRequest = 0;
     let resizeTimer = 0;
     let fieldIsVisible = true;
@@ -171,27 +172,47 @@
       return y;
     };
 
-    const routeAroundPointer = (x, startingY, particle) => {
-      if (pointer.strength <= 0.001) return startingY;
+    const warpAroundPointer = (x, y, particle) => {
+      if (pointer.strength <= 0.001) return { x, y, influence: 0 };
 
-      const horizontalReach = 190;
-      const distanceX = Math.abs(x - pointer.x);
-      if (distanceX >= horizontalReach) return startingY;
+      const deltaX = x - pointer.x;
+      const deltaY = y - pointer.y;
+      const radius = clamp(Math.min(width, height) * 0.3, 240, 340);
+      const core = clamp(radius * 0.23, 58, 78);
+      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+      if (distanceSquared >= radius * radius) return { x, y, influence: 0 };
 
-      const channelRadius = 125;
-      const envelope = Math.cos((distanceX / horizontalReach) * (Math.PI / 2));
-      const clearance = (channelRadius + 8) * envelope ** 0.72 * pointer.strength;
-      const routedDistanceY = startingY - pointer.y;
-      if (Math.abs(routedDistanceY) >= clearance) return startingY;
+      const distance = Math.sqrt(Math.max(distanceSquared, 0.0001));
+      const normalX = distanceSquared > 0.0001 ? deltaX / distance : 0;
+      const normalY = distanceSquared > 0.0001 ? deltaY / distance : particle.routeSide;
+      let shift = 0;
 
-      const laneDistanceY = particle.laneY - pointer.y;
-      const side = Math.abs(laneDistanceY) > 9 ? Math.sign(laneDistanceY) : particle.routeSide;
-      return pointer.y + side * clearance;
+      if (distance < core) {
+        const coreProgress = 1 - distance / core;
+        const targetRadius = core + 12 * coreProgress * coreProgress;
+        shift = targetRadius - distance;
+      } else {
+        const ringProgress = (distance - core) / (radius - core);
+        const magneticBell = 16 * ringProgress * ringProgress * (1 - ringProgress) * (1 - ringProgress);
+        const pull = clamp(radius * 0.17, 40, 58);
+        shift = -pull * magneticBell;
+      }
+
+      shift *= pointer.strength;
+      return {
+        x: x + normalX * shift,
+        y: y + normalY * shift,
+        influence: 1 - distance / radius
+      };
     };
 
-    const routedYAt = (particle, x) => {
-      const baseY = baseYAt(particle, x);
-      return routeAroundPointer(x, routeAroundQuietZones(x, baseY, particle), particle);
+    const pointAt = (particle, x) => {
+      const warped = warpAroundPointer(x, baseYAt(particle, x), particle);
+      return {
+        x: warped.x,
+        y: routeAroundQuietZones(warped.x, warped.y, particle),
+        influence: warped.influence
+      };
     };
 
     const draw = () => {
@@ -204,16 +225,19 @@
       particles.forEach((particle) => {
         const travel = staticField ? 0 : elapsed * particle.speed;
         const x = ((particle.originX + travel + 48) % trackWidth) - 48;
-        const endX = x + particle.length;
-        const y = routedYAt(particle, x);
-        const endY = routedYAt(particle, endX);
+        const start = pointAt(particle, x);
+        const end = pointAt(particle, x + particle.length);
+        const segmentX = end.x - start.x;
+        const segmentY = end.y - start.y;
+        if (segmentX * segmentX + segmentY * segmentY > particle.length * particle.length * 9) return;
+        const influence = Math.max(start.influence, end.influence) * pointer.strength;
 
         context.beginPath();
-        context.moveTo(x, y);
-        context.lineTo(endX, endY);
+        context.moveTo(start.x, start.y);
+        context.lineTo(end.x, end.y);
         context.strokeStyle = particle.color;
-        context.lineWidth = particle.lineWidth;
-        context.globalAlpha = particle.alpha;
+        context.lineWidth = particle.lineWidth * (1 + influence * 0.08);
+        context.globalAlpha = Math.min(1, particle.alpha * (1 + influence * 0.18));
         context.stroke();
       });
 
@@ -222,8 +246,8 @@
 
     const updatePointer = (deltaSeconds) => {
       const targetStrength = pointer.active && !staticField ? 1 : 0;
-      const strengthBlend = 1 - Math.exp(-8 * deltaSeconds);
-      const positionBlend = 1 - Math.exp(-11 * deltaSeconds);
+      const strengthBlend = 1 - Math.exp(-(pointer.active ? 14 : 7) * deltaSeconds);
+      const positionBlend = 1 - Math.exp(-18 * deltaSeconds);
       pointer.strength += (targetStrength - pointer.strength) * strengthBlend;
 
       if (pointer.active && !staticField) {
@@ -236,17 +260,19 @@
       frameRequest = 0;
       if (staticField || !fieldIsVisible || document.hidden) return;
 
-      let deltaSeconds = 1 / 60;
-      if (lastFrame) {
-        const deltaMilliseconds = timestamp - lastFrame;
-        if (deltaMilliseconds < 15.5) {
-          frameRequest = window.requestAnimationFrame(frame);
-          return;
-        }
-        deltaSeconds = Math.min(deltaMilliseconds / 1000, 0.05);
-        elapsed += deltaSeconds;
+      const frameInterval = 1000 / 60;
+      if (cadenceFrame === null) cadenceFrame = timestamp - frameInterval;
+      const sinceCadence = timestamp - cadenceFrame;
+      if (sinceCadence < frameInterval - 0.25) {
+        frameRequest = window.requestAnimationFrame(frame);
+        return;
       }
-      lastFrame = timestamp;
+      cadenceFrame = timestamp - (sinceCadence % frameInterval);
+
+      const realDelta = lastDraw === null ? frameInterval : timestamp - lastDraw;
+      lastDraw = timestamp;
+      const deltaSeconds = Math.min(realDelta / 1000, 0.05);
+      elapsed += deltaSeconds;
       updatePointer(deltaSeconds);
       draw();
       frameRequest = window.requestAnimationFrame(frame);
@@ -255,12 +281,14 @@
     const syncPlayback = () => {
       const shouldPlay = !staticField && fieldIsVisible && !document.hidden;
       if (shouldPlay && !frameRequest) {
-        lastFrame = 0;
+        cadenceFrame = null;
+        lastDraw = null;
         frameRequest = window.requestAnimationFrame(frame);
       } else if (!shouldPlay && frameRequest) {
         window.cancelAnimationFrame(frameRequest);
         frameRequest = 0;
-        lastFrame = 0;
+        cadenceFrame = null;
+        lastDraw = null;
       }
     };
 
@@ -284,8 +312,6 @@
       measureQuietZones(canvasRect);
       buildParticles();
       draw();
-      surface.classList.add("field-ready");
-      surface.classList.toggle("field-interactive", !staticField);
       syncPlayback();
     };
 
@@ -302,7 +328,6 @@
       pointer.active = false;
       pointer.strength = 0;
       draw();
-      surface.classList.toggle("field-interactive", !staticField);
       syncPlayback();
     };
 
@@ -354,7 +379,8 @@
       window.clearTimeout(resizeTimer);
       if (frameRequest) window.cancelAnimationFrame(frameRequest);
       frameRequest = 0;
-      lastFrame = 0;
+      cadenceFrame = null;
+      lastDraw = null;
       if (!event.persisted) {
         resizeObserver?.disconnect();
         intersectionObserver?.disconnect();

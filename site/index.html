@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f8fb">
+  <meta name="theme-color" content="#f2efe9">
   <meta name="color-scheme" content="light">
   <meta name="description" content="Zapret Control Center — неофициальный интерфейс для Flowseal/zapret-discord-youtube: запуск, смена стратегий, диагностика и безопасные обновления в одной Windows-программе.">
   <meta property="og:type" content="website">
@@ -14,7 +14,7 @@
   <meta property="og:url" content="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="canonical" href="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="icon" href="./assets/favicon.ico" sizes="any">
-  <link rel="stylesheet" href="./styles.css?v=4">
+  <link rel="stylesheet" href="./styles.css?v=5">
   <title>Zapret Control Center — GUI для Flowseal</title>
   <script type="application/ld+json">
   {
@@ -71,7 +71,7 @@
   <header class="site-header" data-header>
     <div class="shell header-inner">
       <a class="brand" href="#top" aria-label="Zapret Control Center — наверх">
-        <span class="brand-route" aria-hidden="true"><i></i><i></i><i></i></span>
+        <img class="brand-icon" src="./assets/favicon.ico" width="38" height="38" alt="" aria-hidden="true">
         <span class="brand-copy"><strong>ZAPRET</strong><small>CONTROL CENTER</small></span>
       </a>
 
@@ -99,13 +99,10 @@
       <div class="hero-vignette" aria-hidden="true"></div>
 
       <div class="shell hero-inner">
-        <div class="hero-copy" data-field-quiet>
+        <div class="hero-copy">
           <p class="hero-kicker"><span aria-hidden="true"></span> Неофициальный GUI для Flowseal · Windows 10/11</p>
           <h1>Управляйте <em>zapret</em>,<br>а не BAT‑файлами.</h1>
-          <p class="hero-lead">
-            Видно, что запущено. Стратегию можно сменить без ручной остановки,
-            а если она не подходит — проверить остальные прямо в программе.
-          </p>
+          <p class="hero-lead">Практично и быстро.</p>
 
           <div class="hero-actions">
             <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
@@ -136,7 +133,6 @@
         </div>
       </div>
 
-      <p class="field-caption" aria-hidden="true">Проведите курсором — пакеты изменят маршрут</p>
     </section>
 
     <aside class="origin-note" aria-label="Происхождение проекта">
@@ -238,24 +234,20 @@
         <header class="section-heading">
           <p class="section-label">Обновления</p>
           <h2>Обновляется,<br>не стирая ваши списки.</h2>
-          <p>
-            Новая версия проходит проверку до замены файлов. Если она не запускается,
-            программа возвращает предыдущую сборку.
-          </p>
         </header>
 
         <ol class="update-route" aria-label="Как проходит обновление">
-          <li><span>01</span><div><strong>Скачивает точный релиз</strong><small>Версия и набор файлов должны совпасть.</small></div></li>
-          <li><span>02</span><div><strong>Сверяет SHA-256</strong><small>Повреждённый или подменённый файл не применяется.</small></div></li>
-          <li><span>03</span><div><strong>Сохраняет ваши данные</strong><small>Списки, настройки и выбранные файлы остаются на месте.</small></div></li>
-          <li><span>04</span><div><strong>Проверяет запуск</strong><small>При ошибке включается откат на прежнюю версию.</small></div></li>
+          <li><span>01</span><strong>Скачивает точный релиз</strong></li>
+          <li><span>02</span><strong>Сверяет SHA-256</strong></li>
+          <li><span>03</span><strong>Сохраняет ваши данные</strong></li>
+          <li><span>04</span><strong>Проверяет запуск</strong></li>
         </ol>
       </div>
 
       <div class="shell evidence-row">
-        <article><strong>Сборка проходит тесты</strong><p>Проверяются GUI, стратегии, updater, установщик и portable-сборка.</p></article>
-        <article><strong>Отчёт не забирает списки</strong><p>Содержимое пользовательских файлов и известные секреты не попадают в ZIP поддержки.</p></article>
-        <article><strong>Flowseal проверяется отдельно</strong><p>Синхронизация идёт каждые шесть часов, а конфликт останавливает обновление.</p></article>
+        <article><strong>Сборка проходит тесты</strong></article>
+        <article><strong>Отчёт не забирает списки</strong></article>
+        <article><strong>Flowseal проверяется отдельно</strong></article>
       </div>
     </section>
 
@@ -330,7 +322,7 @@
     <div class="shell footer-grid">
       <div class="footer-about">
         <a class="brand brand--footer" href="#top">
-          <span class="brand-route" aria-hidden="true"><i></i><i></i><i></i></span>
+          <img class="brand-icon" src="./assets/favicon.ico" width="38" height="38" alt="" aria-hidden="true">
           <span class="brand-copy"><strong>ZAPRET</strong><small>CONTROL CENTER</small></span>
         </a>
         <p>Неофициальный интерфейс для Flowseal с открытым исходным кодом.</p>
@@ -351,6 +343,6 @@
     </div>
   </footer>
 
-  <script src="./app.js?v=4" defer></script>
+  <script src="./app.js?v=5" defer></script>
 </body>
 </html>
