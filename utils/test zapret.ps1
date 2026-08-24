@@ -21,10 +21,11 @@ function Wait-WinwsReady {
     while ($timer.ElapsedMilliseconds -lt 5000) {
         if (Get-Process -Name "winws" -ErrorAction SilentlyContinue) {
             Start-Sleep -Milliseconds 300
-            return
+            return $true
         }
         Start-Sleep -Milliseconds 200
     }
+    return $false
 }
 
 function Set-IpsetMode {
@@ -651,7 +652,11 @@ try {
     $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$($file.FullName)`"" -WorkingDirectory $targetDir -PassThru -WindowStyle Minimized
     
     # Wait init
-    Wait-WinwsReady
+    if (-not (Wait-WinwsReady)) {
+        Write-Host "  > Strategy failed to start (winws process not found). Skipping..." -ForegroundColor Red
+        if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+        continue
+    }
     
     if ($testType -eq 'standard') {
         $curlTimeoutSeconds = $standardCurlTimeout
