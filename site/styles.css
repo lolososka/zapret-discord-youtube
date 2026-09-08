@@ -887,6 +887,157 @@ code {
   line-height: 1.55;
 }
 
+.android-section {
+  padding: 0 0 clamp(84px, 10vw, 140px);
+  background: var(--paper);
+}
+
+.android-card {
+  display: grid;
+  min-height: 184px;
+  padding: clamp(28px, 4vw, 46px);
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(24px, 4vw, 54px);
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  background: var(--paper-bright);
+  box-shadow: 0 22px 60px rgba(45, 38, 30, 0.08);
+}
+
+.android-card__device {
+  position: relative;
+  display: grid;
+  width: 58px;
+  height: 76px;
+  padding: 21px 12px;
+  align-content: center;
+  gap: 6px;
+  border: 1px solid var(--ink-soft);
+  border-radius: 16px;
+  background: var(--paper);
+}
+
+.android-card__device::before {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: var(--line-strong);
+  content: "";
+}
+
+.android-card__device::after {
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--mint);
+  content: "";
+}
+
+.android-card__device span {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.android-card__device span:nth-child(1) {
+  width: 23px;
+  background: var(--blue);
+}
+
+.android-card__device span:nth-child(2) {
+  width: 32px;
+  margin-left: 4px;
+  background: var(--violet);
+}
+
+.android-card__device span:nth-child(3) {
+  width: 19px;
+  margin-left: 1px;
+  background: var(--rose);
+}
+
+.android-card__status {
+  display: flex;
+  margin: 0 0 10px;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.android-card__status i {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 4px rgba(168, 125, 70, 0.13);
+}
+
+.android-card__copy h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 3vw, 3.25rem);
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.android-card__description {
+  margin: 13px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.android-card__note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.android-card__actions {
+  display: grid;
+  gap: 16px;
+}
+
+.android-card__button {
+  min-width: 176px;
+  white-space: nowrap;
+}
+
+.android-card__links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.android-card__links a {
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 4px;
+}
+
+.android-card__links a:hover {
+  color: var(--ink);
+}
+
 .faq-section {
   display: grid;
   grid-template-columns: minmax(300px, 0.8fr) minmax(500px, 1.2fr);
@@ -1041,6 +1192,15 @@ code {
 
   .install-card {
     grid-template-columns: 1fr;
+  }
+
+  .android-card {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .android-card__actions {
+    width: max-content;
+    grid-column: 2;
   }
 }
 
@@ -1252,6 +1412,35 @@ code {
     flex-direction: column;
   }
 
+  .android-card {
+    padding: 30px 24px;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+    border-radius: 16px;
+  }
+
+  .android-card__device {
+    width: 44px;
+    height: 60px;
+    padding: 17px 8px;
+    gap: 4px;
+    border-radius: 13px;
+  }
+
+  .android-card__device span:nth-child(1) { width: 18px; }
+  .android-card__device span:nth-child(2) { width: 25px; }
+  .android-card__device span:nth-child(3) { width: 15px; }
+
+  .android-card__copy h2 {
+    font-size: clamp(1.8rem, 9vw, 2.6rem);
+  }
+
+  .android-card__actions {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
   .faq-section {
     gap: 44px;
   }
@@ -1298,7 +1487,9 @@ code {
   .button,
   .nav-download,
   .app-frame,
-  .install-card {
+  .install-card,
+  .android-card,
+  .android-card__device {
     border: 1px solid ButtonText;
   }
 
