@@ -21,6 +21,7 @@ public sealed class AppState : ObservableObject
     private readonly BypassController _bypass = BypassController.Instance;
     private readonly StrategyPreferences _prefs = StrategyPreferences.Load();
     private readonly SemaphoreSlim _bypassOperationGate = new(1, 1);
+    private readonly SemaphoreSlim _updateCheckGate = new(1, 1);
     private readonly CancellationTokenSource _shutdownCancellation = new();
     private readonly object _shutdownSync = new();
     private CancellationTokenSource? _diagnosticsCancellation;
@@ -32,6 +33,7 @@ public sealed class AppState : ObservableObject
 
     // «Работала у вас» ставится один раз за запуск — иначе тост повторялся бы каждую секунду.
     private string? _markedThisRun;
+    private string? _updateToastVersion;
     private bool _prefsDirty;
 
     private AppState()
@@ -1441,17 +1443,39 @@ public sealed class AppState : ObservableObject
 
     private async Task CheckUpdatesAsync(bool silent)
     {
-        var (ok, remote, newer) = await UpdateService.CheckAsync();
-        if (!ok)
+        await _updateCheckGate.WaitAsync();
+        try
         {
-            if (!silent) Notify("Не удалось проверить обновления", ToastKind.Warning);
-            return;
+            var (ok, remote, newer) = await UpdateService.CheckAsync();
+            if (!ok)
+            {
+                if (!silent) Notify("Не удалось проверить обновления", ToastKind.Warning);
+                return;
+            }
+
+            UpdateAvailableVersion = newer ? remote : null;
+
+            if (newer)
+            {
+                // Startup and a manual check may finish together. Keep the
+                // separate update notification useful instead of repeating it
+                // every time the dashboard is revisited.
+                if (!string.Equals(_updateToastVersion, remote, StringComparison.Ordinal))
+                {
+                    _updateToastVersion = remote;
+                    Notify($"Доступна версия {remote}", ToastKind.Info);
+                }
+            }
+            else
+            {
+                _updateToastVersion = null;
+                if (!silent) Notify($"Установлена последняя версия {UpdateService.LocalVersion}", ToastKind.Success);
+            }
         }
-
-        UpdateAvailableVersion = newer ? remote : null;
-
-        if (newer) Notify($"Доступна версия {remote}", ToastKind.Info);
-        else if (!silent) Notify($"Установлена последняя версия {UpdateService.LocalVersion}", ToastKind.Success);
+        finally
+        {
+            _updateCheckGate.Release();
+        }
     }
 
     /// <summary>Русское склонение по числу: 1 проблема, 2 проблемы, 5 проблем.</summary>
