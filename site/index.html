@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f2efe9">
-  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#07080b">
+  <meta name="color-scheme" content="dark">
   <meta name="description" content="Zapret Control Center — неофициальный интерфейс для Flowseal/zapret-discord-youtube: запуск, смена стратегий, диагностика и безопасные обновления в одной Windows-программе.">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="ru_RU">
@@ -12,9 +12,13 @@
   <meta property="og:title" content="Zapret Control Center">
   <meta property="og:description" content="Управляйте zapret, меняйте стратегии и проверяйте соединение без ручной работы с BAT‑файлами.">
   <meta property="og:url" content="https://lolososka.github.io/zapret-discord-youtube/">
+  <meta property="og:image" content="https://lolososka.github.io/zapret-discord-youtube/assets/fsociety-globe.jpg">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="canonical" href="https://lolososka.github.io/zapret-discord-youtube/">
   <link rel="icon" href="./assets/favicon.ico" sizes="any">
+  <link rel="preload" as="image" href="./assets/fsociety-mask.jpg" fetchpriority="high">
   <link rel="stylesheet" href="./styles.css?v=8">
+  <link rel="stylesheet" href="./signal.css?v=2">
   <title>Zapret Control Center — GUI для Flowseal</title>
   <script type="application/ld+json">
   {
@@ -33,40 +37,52 @@
   <!-- RELEASE_DATA_START -->
   <script type="application/json" id="release-data">
   {
-    "tag_name": "gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3",
-    "name": "Zapret Control Center v1.14.0 + Flowseal v1.10.1",
-    "published_at": "2026-08-14T00:42:08Z",
-    "html_url": "https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3",
+    "tag_name": "gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057",
+    "name": "Zapret Control Center v1.14.1 + Flowseal v1.10.3",
+    "published_at": "2026-10-06T00:06:06Z",
+    "html_url": "https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057",
     "draft": false,
     "prerelease": false,
     "assets": [
       {
         "name": "SHA256SUMS.txt",
         "size": 332,
-        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/SHA256SUMS.txt"
+        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/SHA256SUMS.txt"
       },
       {
-        "name": "zapret-control-center-1.14.0-flowseal-1.10.1-win-x64.zip",
-        "size": 62418411,
-        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/zapret-control-center-1.14.0-flowseal-1.10.1-win-x64.zip"
+        "name": "zapret-control-center-1.14.1-flowseal-1.10.3-win-x64.zip",
+        "size": 62437812,
+        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/zapret-control-center-1.14.1-flowseal-1.10.3-win-x64.zip"
       },
       {
-        "name": "zapret-control-center-setup-1.14.0-flowseal-1.10.1-win-x64.exe",
-        "size": 62463193,
-        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/zapret-control-center-setup-1.14.0-flowseal-1.10.1-win-x64.exe"
+        "name": "zapret-control-center-setup-1.14.1-flowseal-1.10.3-win-x64.exe",
+        "size": 62483028,
+        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/zapret-control-center-setup-1.14.1-flowseal-1.10.3-win-x64.exe"
       },
       {
         "name": "ZapretGUI.exe",
-        "size": 66234200,
-        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/ZapretGUI.exe"
+        "size": 66248619,
+        "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/ZapretGUI.exe"
       }
     ]
   }
   </script>
   <!-- RELEASE_DATA_END -->
 </head>
-<body>
+<body class="signal-theme">
   <a class="skip-link" href="#main">Перейти к содержанию</a>
+
+  <div class="entry-sequence" data-entry-sequence>
+    <div class="entry-sequence__noise" aria-hidden="true"></div>
+    <div class="entry-sequence__scan" aria-hidden="true"></div>
+    <div class="entry-mark" aria-hidden="true">
+      <figure class="entry-mark__emblem">
+        <img src="./assets/fsociety-mask.jpg" width="630" height="630" alt="">
+      </figure>
+      <small>PRIVATE ROUTE // SIGNAL READY</small>
+    </div>
+    <button class="entry-skip" type="button" data-entry-skip>Пропустить заставку</button>
+  </div>
 
   <header class="site-header" data-header>
     <div class="shell header-inner">
@@ -86,28 +102,60 @@
         <a href="#updates">Обновления</a>
         <a href="#install">Установка</a>
         <a href="#faq">Вопросы</a>
-        <a class="nav-download" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
-          <span data-download-label>Скачать установщик</span>
-        </a>
+        <button class="nav-download" type="button" data-download-open>Скачать</button>
       </nav>
     </div>
   </header>
 
   <main id="main">
     <section class="hero" id="top" data-field-surface>
-      <canvas class="packet-field" data-packet-field aria-hidden="true"></canvas>
+      <div class="cinema" data-cinema aria-hidden="true">
+        <div class="cinema__scene cinema__scene--mask is-active" data-cinema-scene></div>
+        <div class="cinema__scene cinema__scene--globe" data-cinema-scene></div>
+        <div class="cinema__aperture"></div>
+        <div class="cinema__grain"></div>
+        <div class="cinema__scan"></div>
+      </div>
+      <div class="data-relay" aria-hidden="true">
+        <svg viewBox="0 0 560 640" role="presentation">
+          <defs>
+            <filter id="relay-glow" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="5" result="blur"></feGaussianBlur>
+              <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
+            </filter>
+          </defs>
+          <g class="data-relay__cloud">
+            <path d="M179 150c5-40 38-70 79-70 31 0 59 18 72 45 7-4 16-6 25-6 31 0 56 24 57 55 28 3 49 26 49 55 0 31-25 57-57 57H173c-38 0-69-31-69-69 0-35 26-63 60-68 5 0 10 0 15 1Z"></path>
+            <path class="data-relay__cloud-line" d="M162 222h244"></path>
+          </g>
+          <g class="data-relay__bits" filter="url(#relay-glow)">
+            <text x="205" y="405">1</text><text x="245" y="372">0</text>
+            <text x="286" y="418">1</text><text x="326" y="384">0</text>
+            <text x="365" y="412">1</text><text x="225" y="448">0</text>
+            <text x="268" y="467">0</text><text x="310" y="445">1</text>
+            <text x="350" y="459">0</text><text x="390" y="440">1</text>
+          </g>
+          <g class="data-relay__computer">
+            <rect x="138" y="432" width="284" height="162" rx="10"></rect>
+            <rect class="data-relay__screen" x="155" y="449" width="250" height="128" rx="3"></rect>
+            <path d="M102 606h356l-25 22H127l-25-22Z"></path>
+            <path class="data-relay__cursor" d="M191 500h64M191 520h112M191 540h84"></path>
+          </g>
+        </svg>
+      </div>
       <div class="hero-vignette" aria-hidden="true"></div>
 
       <div class="shell hero-inner">
-        <div class="hero-copy">
-          <p class="hero-kicker"><span aria-hidden="true"></span> Неофициальный GUI для Flowseal · Windows 10/11</p>
+        <div class="hero-copy" data-field-quiet>
+          <p class="hero-kicker"><span aria-hidden="true"></span> ZAPRET CONTROL / WINDOWS 10–11</p>
           <h1>Управляйте <em>zapret</em>,<br>а не BAT‑файлами.</h1>
+          <p class="hero-summary">Запуск, стратегии и диагностика — в одном окне.</p>
           <div class="hero-actions">
-            <a class="button button--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+            <button class="button button--primary" type="button" data-download-open>
               <span class="button-platform" aria-hidden="true">⊞</span>
-              <span data-download-label>Скачать установщик</span>
+              <span>Скачать для Windows</span>
               <span class="button-arrow" aria-hidden="true">↓</span>
-            </a>
+            </button>
             <a class="button button--secondary" href="#interface">
               Посмотреть интерфейс
               <span class="button-arrow" aria-hidden="true">↘</span>
@@ -236,11 +284,11 @@
           <strong class="install-version" data-release-title>Zapret Control Center 1.14.1</strong>
           <p data-release-meta>Windows x64 · Установщик EXE · 59,6 МБ</p>
           <div class="install-actions">
-            <a class="button button--primary button--light" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+            <button class="button button--primary button--light" type="button" data-download-open>
               <span class="button-platform" aria-hidden="true">⊞</span>
-              <span data-download-label>Скачать установщик</span>
+              <span>Выбрать загрузку</span>
               <span class="button-arrow" aria-hidden="true">↓</span>
-            </a>
+            </button>
             <a class="checksum-link" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-checksum-link>
               Проверить SHA-256 <span aria-hidden="true">↗</span>
             </a>
@@ -319,6 +367,48 @@
     </section>
   </main>
 
+  <section class="download-dock" data-download-dock aria-hidden="true" aria-labelledby="download-dock-title">
+    <button class="download-dock__backdrop" type="button" data-download-close tabindex="-1" aria-label="Закрыть окно загрузки"></button>
+    <div class="download-dock__panel" role="dialog" aria-modal="true">
+      <header class="download-dock__header">
+        <div>
+          <span class="download-dock__eyebrow">VERIFIED RELEASE</span>
+          <h2 id="download-dock-title" data-release-title>Zapret Control Center 1.14.1</h2>
+        </div>
+        <button class="download-dock__close" type="button" data-download-close aria-label="Закрыть">×</button>
+      </header>
+
+      <div class="download-dock__meta">
+        <span>Windows x64</span>
+        <span>Flowseal <strong data-flowseal-version>1.10.3</strong></span>
+        <span data-published-note>Последний проверенный релиз</span>
+      </div>
+
+      <div class="download-files">
+        <a class="download-file download-file--primary" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-download-link>
+          <span class="download-file__icon" aria-hidden="true">EXE</span>
+          <span class="download-file__copy"><strong>Установщик</strong><small>Обычная установка и ярлык в «Пуск»</small></span>
+          <span class="download-file__size" data-download-size>59,6 МБ</span>
+          <span class="download-file__arrow" aria-hidden="true">↓</span>
+        </a>
+        <a class="download-file" href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-portable-link>
+          <span class="download-file__icon" aria-hidden="true">ZIP</span>
+          <span class="download-file__copy"><strong>Portable</strong><small>Запуск без установки</small></span>
+          <span class="download-file__size">WIN64</span>
+          <span class="download-file__arrow" aria-hidden="true">↓</span>
+        </a>
+      </div>
+
+      <div class="download-dock__trust">
+        <a href="https://github.com/lolososka/zapret-discord-youtube/releases/latest" data-checksum-link>SHA‑256</a>
+        <a href="https://github.com/lolososka/zapret-discord-youtube/releases/latest">Страница релиза ↗</a>
+        <span>Открытый исходный код</span>
+      </div>
+      <p class="download-dock__note">Издатель пока не подписан Authenticode — Windows может показать SmartScreen.</p>
+      <p class="download-dock__status" data-download-status aria-live="polite">Выберите файл.</p>
+    </div>
+  </section>
+
   <footer class="site-footer">
     <div class="shell footer-grid">
       <div class="footer-about">
@@ -346,5 +436,6 @@
   </footer>
 
   <script src="./app.js?v=6" defer></script>
+  <script src="./signal.js?v=2" defer></script>
 </body>
 </html>

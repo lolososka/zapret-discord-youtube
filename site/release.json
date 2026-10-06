@@ -1,30 +1,30 @@
 {
-  "tag_name": "gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3",
-  "name": "Zapret Control Center v1.14.0 + Flowseal v1.10.1",
-  "published_at": "2026-08-14T00:42:08Z",
-  "html_url": "https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3",
+  "tag_name": "gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057",
+  "name": "Zapret Control Center v1.14.1 + Flowseal v1.10.3",
+  "published_at": "2026-10-06T00:06:06Z",
+  "html_url": "https://github.com/lolososka/zapret-discord-youtube/releases/tag/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057",
   "draft": false,
   "prerelease": false,
   "assets": [
     {
       "name": "SHA256SUMS.txt",
       "size": 332,
-      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/SHA256SUMS.txt"
+      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/SHA256SUMS.txt"
     },
     {
-      "name": "zapret-control-center-1.14.0-flowseal-1.10.1-win-x64.zip",
-      "size": 62418411,
-      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/zapret-control-center-1.14.0-flowseal-1.10.1-win-x64.zip"
+      "name": "zapret-control-center-1.14.1-flowseal-1.10.3-win-x64.zip",
+      "size": 62437812,
+      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/zapret-control-center-1.14.1-flowseal-1.10.3-win-x64.zip"
     },
     {
-      "name": "zapret-control-center-setup-1.14.0-flowseal-1.10.1-win-x64.exe",
-      "size": 62463193,
-      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/zapret-control-center-setup-1.14.0-flowseal-1.10.1-win-x64.exe"
+      "name": "zapret-control-center-setup-1.14.1-flowseal-1.10.3-win-x64.exe",
+      "size": 62483028,
+      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/zapret-control-center-setup-1.14.1-flowseal-1.10.3-win-x64.exe"
     },
     {
       "name": "ZapretGUI.exe",
-      "size": 66234200,
-      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.0-flowseal-v1.10.1-u47da17f80ad3/ZapretGUI.exe"
+      "size": 66248619,
+      "browser_download_url": "https://github.com/lolososka/zapret-discord-youtube/releases/download/gui-v1.14.1-flowseal-v1.10.3-ueb16c1419057/ZapretGUI.exe"
     }
   ]
 }

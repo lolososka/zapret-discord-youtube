@@ -106,7 +106,9 @@ jobs:
           required_files=(
             site/index.html
             site/styles.css
+            site/signal.css
             site/app.js
+            site/signal.js
             site/404.html
             site/robots.txt
             site/sitemap.xml
@@ -114,6 +116,8 @@ jobs:
             site/assets/dashboard.png
             site/assets/user-lists.png
             site/assets/favicon.ico
+            site/assets/fsociety-mask.jpg
+            site/assets/fsociety-globe.jpg
           )
 
           for file in "${required_files[@]}"; do
@@ -129,8 +133,13 @@ jobs:
           fi
 
           node --check site/app.js
+          node --check site/signal.js
           grep -Fq './styles.css' site/index.html
+          grep -Fq './signal.css' site/index.html
           grep -Fq './app.js' site/index.html
+          grep -Fq './signal.js' site/index.html
+          grep -Fq './assets/fsociety-mask.jpg' site/index.html
+          grep -Fq './assets/fsociety-globe.jpg' site/signal.css
 
           echo "Pages base path: ${{ steps.pages.outputs.base_path }}"
 
