@@ -9,17 +9,21 @@
   const header = document.querySelector("[data-header]");
   const menu = document.querySelector("[data-menu]");
   const menuToggle = document.querySelector("[data-menu-toggle]");
+  const mobileMenu = window.matchMedia("(max-width: 820px)");
 
   const setMenuState = (open) => {
     if (!menu || !menuToggle) return;
 
-    menu.classList.toggle("is-open", open);
-    menuToggle.setAttribute("aria-expanded", String(open));
-    header?.classList.toggle("is-open", open);
+    const nextOpen = mobileMenu.matches ? open : false;
+
+    menu.classList.toggle("is-open", nextOpen);
+    menuToggle.setAttribute("aria-expanded", String(nextOpen));
+    header?.classList.toggle("is-open", nextOpen);
+    menu.inert = mobileMenu.matches && !nextOpen;
 
     const label = menuToggle.querySelector(".sr-only");
     if (label) {
-      label.textContent = open ? "Закрыть меню" : "Открыть меню";
+      label.textContent = nextOpen ? "Закрыть меню" : "Открыть меню";
     }
   };
 
@@ -28,17 +32,20 @@
   });
 
   menu?.addEventListener("click", (event) => {
-    if (event.target.closest("a")) {
+    if (event.target.closest("a, button")) {
       setMenuState(false);
     }
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && menuToggle?.getAttribute("aria-expanded") === "true") {
       setMenuState(false);
       menuToggle?.focus();
     }
   });
+
+  mobileMenu.addEventListener?.("change", () => setMenuState(false));
+  setMenuState(false);
 
   const updateHeader = () => {
     header?.classList.toggle("is-scrolled", window.scrollY > 12);

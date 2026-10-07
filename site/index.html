@@ -18,7 +18,7 @@
   <link rel="icon" href="./assets/favicon.ico" sizes="any">
   <link rel="preload" as="image" href="./assets/fsociety-mask.jpg" fetchpriority="high">
   <link rel="stylesheet" href="./styles.css?v=8">
-  <link rel="stylesheet" href="./signal.css?v=2">
+  <link rel="stylesheet" href="./signal.css?v=6">
   <title>Zapret Control Center — GUI для Flowseal</title>
   <script type="application/ld+json">
   {
@@ -72,7 +72,7 @@
 <body class="signal-theme">
   <a class="skip-link" href="#main">Перейти к содержанию</a>
 
-  <div class="entry-sequence" data-entry-sequence>
+  <div class="entry-sequence" data-entry-sequence role="dialog" aria-modal="true" aria-label="Заставка сайта">
     <div class="entry-sequence__noise" aria-hidden="true"></div>
     <div class="entry-sequence__scan" aria-hidden="true"></div>
     <div class="entry-mark" aria-hidden="true">
@@ -115,33 +115,6 @@
         <div class="cinema__aperture"></div>
         <div class="cinema__grain"></div>
         <div class="cinema__scan"></div>
-      </div>
-      <div class="data-relay" aria-hidden="true">
-        <svg viewBox="0 0 560 640" role="presentation">
-          <defs>
-            <filter id="relay-glow" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="5" result="blur"></feGaussianBlur>
-              <feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge>
-            </filter>
-          </defs>
-          <g class="data-relay__cloud">
-            <path d="M179 150c5-40 38-70 79-70 31 0 59 18 72 45 7-4 16-6 25-6 31 0 56 24 57 55 28 3 49 26 49 55 0 31-25 57-57 57H173c-38 0-69-31-69-69 0-35 26-63 60-68 5 0 10 0 15 1Z"></path>
-            <path class="data-relay__cloud-line" d="M162 222h244"></path>
-          </g>
-          <g class="data-relay__bits" filter="url(#relay-glow)">
-            <text x="205" y="405">1</text><text x="245" y="372">0</text>
-            <text x="286" y="418">1</text><text x="326" y="384">0</text>
-            <text x="365" y="412">1</text><text x="225" y="448">0</text>
-            <text x="268" y="467">0</text><text x="310" y="445">1</text>
-            <text x="350" y="459">0</text><text x="390" y="440">1</text>
-          </g>
-          <g class="data-relay__computer">
-            <rect x="138" y="432" width="284" height="162" rx="10"></rect>
-            <rect class="data-relay__screen" x="155" y="449" width="250" height="128" rx="3"></rect>
-            <path d="M102 606h356l-25 22H127l-25-22Z"></path>
-            <path class="data-relay__cursor" d="M191 500h64M191 520h112M191 540h84"></path>
-          </g>
-        </svg>
       </div>
       <div class="hero-vignette" aria-hidden="true"></div>
 
@@ -194,30 +167,93 @@
       </div>
     </aside>
 
-    <section class="section section--inside shell" id="inside" aria-labelledby="inside-title">
-      <header class="section-heading">
-        <p class="section-label">Что внутри</p>
-        <h2 id="inside-title">Не нужно помнить,<br>какой BAT‑файл сработал.</h2>
-      </header>
+    <section class="relay-story" id="inside" data-relay-story aria-labelledby="relay-story-title">
+      <div class="relay-story__sticky">
+        <div class="shell relay-story__frame">
+          <header class="relay-story__copy">
+            <p class="section-label">Маршрут</p>
+            <h2 id="relay-story-title">Путь<br>пакета.</h2>
+            <p class="relay-story__note">Локальная обработка. IP не меняется.</p>
+            <ol class="relay-story__steps">
+              <li class="is-active" data-relay-step><span>LOCAL</span><strong>Состояние zapret</strong></li>
+              <li data-relay-step><span>SPLIT</span><strong>Смена стратегии</strong></li>
+              <li data-relay-step><span>CHECK</span><strong>Диагностика</strong></li>
+              <li data-relay-step><span>READY</span><strong>Домены и исключения</strong></li>
+            </ol>
+          </header>
 
-      <ul class="capability-list" role="list">
-        <li>
-          <span class="capability-mark capability-mark--violet" aria-hidden="true">●</span>
-          <strong>Состояние zapret</strong>
-        </li>
-        <li>
-          <span class="capability-mark capability-mark--blue" aria-hidden="true">↻</span>
-          <strong>Смена стратегии без остановки</strong>
-        </li>
-        <li>
-          <span class="capability-mark capability-mark--rose" aria-hidden="true">⌁</span>
-          <strong>Диагностика соединения</strong>
-        </li>
-        <li>
-          <span class="capability-mark capability-mark--amber" aria-hidden="true">＋</span>
-          <strong>Домены и исключения</strong>
-        </li>
-      </ul>
+          <div class="relay-stage" data-relay-stage>
+            <svg class="relay-cloud" viewBox="0 0 360 210" role="presentation" aria-hidden="true" focusable="false">
+              <defs>
+                <linearGradient id="relay-cloud-stroke" x1="30" y1="185" x2="326" y2="28" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#6e8dff"></stop>
+                  <stop offset="0.52" stop-color="#8b57ff"></stop>
+                  <stop offset="1" stop-color="#c33d4b"></stop>
+                </linearGradient>
+              </defs>
+              <g class="relay-cloud__shell">
+                <path d="M78 166h196c39 0 70-27 70-62 0-32-26-59-60-62C274 18 250 4 222 4c-39 0-71 28-74 65-11-9-25-14-40-14-36 0-65 27-65 60v3C18 123 0 145 0 170c0 20 11 37 28 47"></path>
+                <path class="relay-cloud__echo" d="M59 177h215c29 0 52-20 52-45"></path>
+              </g>
+              <g class="relay-cloud__core">
+                <path d="M105 148h145M125 126l26 22 31-43 34 43"></path>
+                <circle cx="105" cy="148" r="5"></circle>
+                <circle cx="151" cy="148" r="5"></circle>
+                <circle cx="182" cy="105" r="5"></circle>
+                <circle cx="216" cy="148" r="5"></circle>
+                <circle cx="250" cy="148" r="5"></circle>
+              </g>
+              <path class="relay-cloud__ingress" d="M182 196v-48"></path>
+              <circle class="relay-cloud__pulse" cx="182" cy="196" r="4"></circle>
+            </svg>
+
+            <div class="relay-uplink" data-relay-uplink aria-hidden="true">
+              <i class="relay-bit" style="--i:0">0</i><i class="relay-bit" style="--i:1">1</i>
+              <i class="relay-bit" style="--i:2">1</i><i class="relay-bit" style="--i:3">0</i>
+              <i class="relay-bit" style="--i:4">1</i><i class="relay-bit" style="--i:5">0</i>
+              <i class="relay-bit" style="--i:6">0</i><i class="relay-bit" style="--i:7">1</i>
+              <i class="relay-bit" style="--i:8">0</i><i class="relay-bit" style="--i:9">1</i>
+              <i class="relay-bit" style="--i:10">1</i><i class="relay-bit" style="--i:11">0</i>
+            </div>
+
+            <div class="relay-laptop" role="group" aria-label="Интерактивный терминал на экране ноутбука">
+              <div class="relay-laptop__lid">
+                <div class="relay-laptop__bezel">
+                  <div class="relay-laptop__screen" data-terminal-screen aria-disabled="true">
+                    <div class="relay-terminal__bar"><i></i><span data-terminal-title>winws / route.trace</span><b>LOCAL</b></div>
+                    <div class="relay-terminal__code" data-terminal-output role="log" aria-live="polite" aria-relevant="additions text">
+                      <span><b>20:41:17</b> service: <em>active</em></span>
+                      <span><b>20:41:18</b> strategy: general</span>
+                      <span><b>20:41:18</b> tcp: 80,443 / split</span>
+                      <span><b>20:41:19</b> hostlist: user</span>
+                      <span><b>20:41:19</b> route: <em>ready</em></span>
+                      <span><b>20:41:20</b> packet 00110110</span>
+                    </div>
+                    <div class="relay-terminal__egg" data-terminal-egg role="status" aria-hidden="true">
+                      <img src="./assets/fsociety-mask.jpg" alt="">
+                      <strong>fsociety</strong>
+                      <span>access granted · hello, friend.</span>
+                      <button type="button" data-terminal-exit aria-label="Закрыть пасхалку">ESC</button>
+                    </div>
+                    <form class="relay-terminal__prompt" data-terminal-form autocomplete="off">
+                      <label class="sr-only" for="relay-command">Команда терминала</label>
+                      <span aria-hidden="true">guest@zapret:~$</span>
+                      <input id="relay-command" data-terminal-input type="text" maxlength="48" inputmode="text" enterkeyhint="send" autocapitalize="none" autocomplete="off" spellcheck="false" disabled>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              <div class="relay-laptop__hinge" aria-hidden="true"></div>
+              <div class="relay-laptop__deck" aria-hidden="true">
+                <div class="relay-laptop__keys"></div>
+                <div class="relay-laptop__trackpad"></div>
+              </div>
+              <div class="relay-laptop__edge" aria-hidden="true"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </section>
 
     <section class="interface-section" id="interface">
@@ -229,14 +265,15 @@
           </div>
         </header>
 
-        <figure class="app-frame">
+        <figure class="app-frame" data-app-frame>
           <div class="app-frame__bar">
             <span><i></i> Обход активен</span>
+            <span class="app-frame__inspect-label" data-app-inspect-label>Нажмите на экран · увеличить</span>
             <span data-release-state>GUI 1.14.1 · VERIFIED</span>
           </div>
-          <div class="app-frame__screen">
-            <img src="./assets/dashboard.png" alt="Главный экран Zapret Control Center с выбранной стратегией и показателями трафика" width="1180" height="760">
-          </div>
+          <button class="app-frame__screen" type="button" data-app-viewport aria-label="Увеличить снимок интерфейса" aria-pressed="false">
+            <img src="./assets/dashboard.png" alt="Главный экран Zapret Control Center с выбранной стратегией и показателями трафика" width="1180" height="760" draggable="false">
+          </button>
         </figure>
       </div>
     </section>
@@ -245,16 +282,17 @@
       <figure class="lists-visual">
         <div class="lists-visual__paper">
           <img src="./assets/user-lists.png" alt="Редактор пользовательских доменов и исключений в Zapret Control Center" width="972" height="716" loading="lazy">
+          <span class="lists-visual__focus" data-lists-focus aria-hidden="true"></span>
         </div>
         <figcaption>Домены · IP · исключения</figcaption>
       </figure>
       <div class="lists-copy">
         <p class="section-label">Свои правила</p>
         <h2>Сайты и исключения.</h2>
-        <ul class="plain-list">
-          <li>Домены и IP в отдельных вкладках</li>
-          <li>Защита несохранённых изменений</li>
-          <li>Сохранение данных при обновлении</li>
+        <ul class="plain-list" data-lists-controls>
+          <li><button type="button" data-list-focus="tabs" aria-pressed="true">Домены и IP в отдельных вкладках</button></li>
+          <li><button type="button" data-list-focus="guard" aria-pressed="false">Защита несохранённых изменений</button></li>
+          <li><button type="button" data-list-focus="storage" aria-pressed="false">Сохранение данных при обновлении</button></li>
         </ul>
       </div>
     </section>
@@ -264,13 +302,16 @@
         <header class="section-heading">
           <p class="section-label">Обновления</p>
           <h2>Обновляется,<br>не стирая ваши списки.</h2>
+          <button class="update-run" type="button" data-update-run>
+            <i aria-hidden="true"></i><span data-update-run-label>Проверить цепочку</span>
+          </button>
         </header>
 
-        <ol class="update-route" aria-label="Как проходит обновление">
-          <li><span>01</span><strong>Скачивает точный релиз</strong></li>
-          <li><span>02</span><strong>Сверяет SHA-256</strong></li>
-          <li><span>03</span><strong>Сохраняет ваши данные</strong></li>
-          <li><span>04</span><strong>Проверяет запуск</strong></li>
+        <ol class="update-route" data-update-route aria-label="Как проходит обновление">
+          <li data-update-step><span>01</span><strong>Скачивает точный релиз</strong></li>
+          <li data-update-step><span>02</span><strong>Сверяет SHA-256</strong></li>
+          <li data-update-step><span>03</span><strong>Сохраняет ваши данные</strong></li>
+          <li data-update-step><span>04</span><strong>Проверяет запуск</strong></li>
         </ol>
       </div>
 
@@ -306,9 +347,10 @@
 
     <section class="android-section" id="android" aria-labelledby="android-title">
       <div class="shell android-card">
-        <div class="android-card__device" aria-hidden="true">
-          <span></span><span></span><span></span>
-        </div>
+        <button class="android-card__device" type="button" data-android-mode data-mode="vpn" aria-label="Режим VPN. Переключить режим">
+          <span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span>
+          <small data-android-mode-label aria-live="polite">VPN</small>
+        </button>
         <div class="android-card__copy">
           <p class="android-card__status"><i aria-hidden="true"></i> Android 5+ · by lolososka</p>
           <h2 id="android-title">Zapret Mobile.</h2>
@@ -367,9 +409,9 @@
     </section>
   </main>
 
-  <section class="download-dock" data-download-dock aria-hidden="true" aria-labelledby="download-dock-title">
+  <section class="download-dock" data-download-dock aria-hidden="true" hidden>
     <button class="download-dock__backdrop" type="button" data-download-close tabindex="-1" aria-label="Закрыть окно загрузки"></button>
-    <div class="download-dock__panel" role="dialog" aria-modal="true">
+    <div class="download-dock__panel" role="dialog" aria-modal="true" aria-labelledby="download-dock-title">
       <header class="download-dock__header">
         <div>
           <span class="download-dock__eyebrow">VERIFIED RELEASE</span>
@@ -432,10 +474,19 @@
         <a href="https://github.com/lolososka/zapret-discord-youtube/blob/main/LICENSE.txt">MIT License</a>
       </nav>
       <div class="footer-state"><i aria-hidden="true"></i><span>Без аналитики<br>и сторонних cookie</span></div>
+      <details class="photo-credits">
+        <summary>Источники фотографий</summary>
+        <p>
+          <a href="https://commons.wikimedia.org/wiki/File:Televideo925Terminal_adjusted.jpg">TeleVideo 925</a> — Wtshymanski, Public Domain;
+          <a href="https://commons.wikimedia.org/wiki/File:CRT_memory.jpg">CRT memory</a> — Ben.Green, Public Domain;
+          <a href="https://commons.wikimedia.org/wiki/File:Rear_of_rack_at_NERSC_data_center_-_closeup.jpg">NERSC rack</a> — Derrick Coetzee, CC0.
+          Фотографии используются как фоновые акценты и тонированы стилями сайта.
+        </p>
+      </details>
     </div>
   </footer>
 
-  <script src="./app.js?v=6" defer></script>
-  <script src="./signal.js?v=2" defer></script>
+  <script src="./app.js?v=7" defer></script>
+  <script src="./signal.js?v=6" defer></script>
 </body>
 </html>

@@ -118,6 +118,9 @@ jobs:
             site/assets/favicon.ico
             site/assets/fsociety-mask.jpg
             site/assets/fsociety-globe.jpg
+            site/assets/photo-terminal.webp
+            site/assets/photo-crt-memory.webp
+            site/assets/photo-server-rack.webp
           )
 
           for file in "${required_files[@]}"; do
@@ -140,6 +143,9 @@ jobs:
           grep -Fq './signal.js' site/index.html
           grep -Fq './assets/fsociety-mask.jpg' site/index.html
           grep -Fq './assets/fsociety-globe.jpg' site/signal.css
+          grep -Fq './assets/photo-terminal.webp' site/signal.css
+          grep -Fq './assets/photo-crt-memory.webp' site/signal.css
+          grep -Fq './assets/photo-server-rack.webp' site/signal.css
 
           echo "Pages base path: ${{ steps.pages.outputs.base_path }}"
 
