@@ -3,7 +3,6 @@
 
   const repository = "lolososka/zapret-discord-youtube";
   const releasePage = `https://github.com/${repository}/releases/latest`;
-  const releaseApi = `https://api.github.com/repos/${repository}/releases/latest`;
   const releaseSnapshot = "./release.json";
 
   const header = document.querySelector("[data-header]");
@@ -551,28 +550,6 @@
       }
     } catch {
       // The hard-coded release remains a complete fallback for local/offline use.
-    }
-
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 7000);
-
-    try {
-      const response = await fetch(releaseApi, {
-        headers: {
-          Accept: "application/vnd.github+json"
-        },
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        throw new Error(`GitHub API returned ${response.status}`);
-      }
-
-      applyRelease(await response.json());
-    } catch {
-      // Some privacy tools block api.github.com; the local snapshot is used in that case.
-    } finally {
-      window.clearTimeout(timeout);
     }
   };
 

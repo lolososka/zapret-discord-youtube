@@ -116,6 +116,7 @@ jobs:
             site/assets/dashboard.png
             site/assets/user-lists.png
             site/assets/favicon.ico
+            site/assets/brand-icon.png
             site/assets/fsociety-mask.jpg
             site/assets/fsociety-globe.jpg
             site/assets/photo-terminal.webp
@@ -141,6 +142,7 @@ jobs:
           grep -Fq './signal.css' site/index.html
           grep -Fq './app.js' site/index.html
           grep -Fq './signal.js' site/index.html
+          grep -Fq './assets/brand-icon.png' site/index.html
           grep -Fq './assets/fsociety-mask.jpg' site/index.html
           grep -Fq './assets/fsociety-globe.jpg' site/signal.css
           grep -Fq './assets/photo-terminal.webp' site/signal.css
