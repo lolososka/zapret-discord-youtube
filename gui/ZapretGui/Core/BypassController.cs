@@ -127,7 +127,8 @@ public sealed class BypassController
 
             // Повторный запуск гасит только процесс, созданный этим экземпляром GUI.
             // Служебный/сторонний winws.exe нельзя завершать неявно.
-            await StopCoreAsync(quiet: true, ownedOnly: true).ConfigureAwait(false);
+            if (!await StopCoreAsync(quiet: true, ownedOnly: true).ConfigureAwait(false))
+                return false;
             ct.ThrowIfCancellationRequested();
 
             if (ProcessUtil.IsProcessRunning("winws.exe"))
@@ -243,7 +244,25 @@ public sealed class BypassController
             ct.ThrowIfCancellationRequested();
 
             bool exited;
-            try { exited = proc.HasExited; } catch { exited = true; }
+            lock (_gate)
+            {
+                try
+                {
+                    exited = !ReferenceEquals(_proc, proc) ||
+                             _state != BypassState.Starting || proc.HasExited;
+                }
+                catch { exited = true; }
+
+                if (!exited)
+                {
+                    // Exited cannot claim the process until the startup state is published.
+                    // Otherwise it could write Failed here and a late Start would overwrite it.
+                    _startedAt = DateTime.Now;
+                    _activeStrategy = strategy;
+                    SetState(BypassState.Running);
+                    _captureStartup = false;
+                }
+            }
 
             if (exited)
             {
@@ -276,13 +295,6 @@ public sealed class BypassController
                 return false;
             }
 
-            _captureStartup = false;
-            lock (_gate)
-            {
-                _startedAt = DateTime.Now;
-                _activeStrategy = strategy;
-            }
-            SetState(BypassState.Running);
             Log($"Обход работает: «{strategy.DisplayName}»" + GameFilterSuffix(mode) + ".", LogLevel.Success);
             return true;
         }
@@ -329,7 +341,8 @@ public sealed class BypassController
     /// true — трогаем только свой дочерний процесс. Так закрывается приложение: winws.exe,
     /// поднятый службой zapret или сторонним лаунчером, переживает выход из GUI.
     /// </param>
-    public async Task StopAsync(bool ownedOnly = true)
+    /// <returns>False if termination of the owned process could not be confirmed.</returns>
+    public async Task<bool> StopAsync(bool ownedOnly = true)
     {
         // Иначе уже запущенный Task.Delay мог снова включить обход после явного Stop.
         CancelPendingAutoRestart();
@@ -340,11 +353,12 @@ public sealed class BypassController
         await _mutex.WaitAsync().ConfigureAwait(false);
         try
         {
-            await StopCoreAsync(quiet: false, ownedOnly: ownedOnly).ConfigureAwait(false);
+            return await StopCoreAsync(quiet: false, ownedOnly: ownedOnly).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             Log("Ошибка при остановке: " + ex.Message, LogLevel.Error);
+            return false;
         }
         finally
         {
@@ -353,12 +367,18 @@ public sealed class BypassController
     }
 
     /// <summary>Вызывается только под _mutex. quiet=true — тихая зачистка перед новым запуском.</summary>
-    private async Task StopCoreAsync(bool quiet, bool ownedOnly = true)
+    private async Task<bool> StopCoreAsync(bool quiet, bool ownedOnly = true)
     {
         Process? proc;
+        Strategy? previousStrategy;
+        GameFilterMode previousMode;
+        DateTime? previousStartedAt;
         lock (_gate)
         {
             proc = _proc;
+            previousStrategy = _activeStrategy;
+            previousMode = _lastMode;
+            previousStartedAt = _startedAt;
             _proc = null;   // снимаем «свой» процесс до kill, чтобы Exited не трактовал это как падение
         }
 
@@ -372,7 +392,7 @@ public sealed class BypassController
                 _startedAt = null;
             }
             SetState(BypassState.Stopped);
-            return;
+            return true;
         }
 
         if (proc is null && foreign && ownedOnly)
@@ -385,23 +405,33 @@ public sealed class BypassController
             SetState(BypassState.Running);
             if (!quiet)
                 Log("Чужой или служебный winws.exe оставлен работающим.", LogLevel.Warn);
-            return;
+            return true;
         }
 
         SetState(BypassState.Stopping);
 
         if (proc is not null)
         {
-            try
+            var stopped = await OwnedProcessStopper.StopAsync(
+                () => proc.HasExited,
+                () => proc.Kill(entireProcessTree: true),
+                token => proc.WaitForExitAsync(token),
+                KillWaitMs).ConfigureAwait(false);
+            if (!stopped.ConfirmedExit)
             {
-                if (!proc.HasExited) proc.Kill(entireProcessTree: true);
-            }
-            catch { /* уже умер или нет прав */ }
-
-            using (var cts = new CancellationTokenSource(KillWaitMs))
-            {
-                try { await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false); }
-                catch { }
+                // Не превращаем свой живой процесс в «чужой» и не теряем handle.
+                // Следующий Stop и аварийный выход должны снова попытаться его остановить.
+                lock (_gate)
+                {
+                    _proc = proc;
+                    _activeStrategy = previousStrategy;
+                    _lastMode = previousMode;
+                    _startedAt = previousStartedAt ?? DateTime.Now;
+                    SetState(BypassState.Running);
+                }
+                Log("Не удалось остановить принадлежащий GUI winws.exe. " +
+                    stopped.Error + " Новый запуск отменён; повторите остановку.", LogLevel.Error);
+                return false;
             }
             SafeDispose(proc);
         }
@@ -429,6 +459,7 @@ public sealed class BypassController
         {
             Log("Предыдущий процесс winws.exe остановлен.");
         }
+        return true;
     }
 
     /// <summary>Синхронное убийство без событий — только для ProcessExit.</summary>

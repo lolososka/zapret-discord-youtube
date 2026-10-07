@@ -498,9 +498,16 @@
                                            ctl:Fx.TickOnChange="True"
                                            Text="{Binding Traffic.PacketsText}" />
 
-                                <TextBlock Grid.Row="2" Style="{StaticResource CaptionTextStyle}"
-                                           TextTrimming="CharacterEllipsis"
-                                           Text="{Binding Traffic.SpeedText}" />
+                                <StackPanel Grid.Row="2">
+                                    <TextBlock Style="{StaticResource CaptionTextStyle}"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="{Binding Traffic.TransferRatesText}" />
+                                    <TextBlock Style="{StaticResource CaptionTextStyle}" Margin="0,4,0,0"
+                                               Foreground="{StaticResource BrushTextTertiary}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="Трафик сетевых интерфейсов с запуска программы"
+                                               Text="{Binding Traffic.SessionTrafficText}" />
+                                </StackPanel>
                             </Grid>
                         </Border>
 

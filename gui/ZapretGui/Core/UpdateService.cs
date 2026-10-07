@@ -240,10 +240,19 @@ public static class UpdateService
 
 }
 
+public enum ProbeResponsePolicy
+{
+    // Для страницы или API нужен успешный статус, а не произвольный HTTP-ответ.
+    Content,
+    // Корень CDN часто не публикует ресурс: 403/404 подтверждают доступность узла.
+    CdnRoot,
+}
+
 public sealed record SiteProbe(
     string Name,
     string Url,
-    bool CountsTowardStrategyScore = true);
+    bool CountsTowardStrategyScore = true,
+    ProbeResponsePolicy ResponsePolicy = ProbeResponsePolicy.Content);
 
 public sealed record ProbeResult(SiteProbe Site, bool Ok, int LatencyMs, string? Error)
 {
@@ -264,10 +273,10 @@ public static class ConnectivityTester
         new("YouTube", "https://www.youtube.com/"),
         // Конкретный CDN-узел зависит от региона, поэтому он полезен в диагностике,
         // но не должен сам решать, какая стратегия лучшая.
-        new("YouTube CDN", "https://rr1---sn-4g5e6nlz.googlevideo.com/", false),
+        new("YouTube CDN", "https://rr1---sn-4g5e6nlz.googlevideo.com/", false, ProbeResponsePolicy.CdnRoot),
         new("Discord API", "https://discord.com/api/v9/gateway"),
-        new("Discord CDN", "https://cdn.discordapp.com/"),
-        new("Discord Media", "https://media.discordapp.net/"),
+        new("Discord CDN", "https://cdn.discordapp.com/", ResponsePolicy: ProbeResponsePolicy.CdnRoot),
+        new("Discord Media", "https://media.discordapp.net/", ResponsePolicy: ProbeResponsePolicy.CdnRoot),
         // Контроль обычного интернета: Google не является целью zapret.
         new("Google", "https://www.google.com/", false)
     };
@@ -279,11 +288,13 @@ public static class ConnectivityTester
     public static IReadOnlyList<SiteProbe> ScoredSites { get; } = ScoredSitesArray;
     public static int ScoredSiteCount => ScoredSitesArray.Length;
 
-    private static HttpClient CreateClient()
+    private static SocketsHttpHandler CreateHandler()
     {
-        var handler = new SocketsHttpHandler
+        return new SocketsHttpHandler
         {
-            AllowAutoRedirect = false,
+            // Проверяем конечный ответ, а не сам 302. .NET 8 не следует HTTPS → HTTP.
+            AllowAutoRedirect = true,
+            MaxAutomaticRedirections = 5,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
             ConnectTimeout = TimeSpan.FromSeconds(4),
             PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
@@ -293,7 +304,11 @@ public static class ConnectivityTester
             // Проверяем именно прямой маршрут zapret, а не системный VPN/HTTP-прокси.
             UseProxy = false
         };
+    }
 
+    private static HttpClient CreateClient()
+    {
+        var handler = CreateHandler();
         var client = new HttpClient(handler, disposeHandler: true);
 
         client.Timeout = Timeout.InfiniteTimeSpan; // таймаут задаётся через CancellationTokenSource
@@ -329,6 +344,7 @@ public static class ConnectivityTester
 
     public static async Task<ProbeResult> ProbeAsync(SiteProbe site, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         using var http = CreateClient();
         return await ProbeAsync(http, site, ct).ConfigureAwait(false);
     }
@@ -361,14 +377,15 @@ public static class ConnectivityTester
                     };
                     req.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
 
-                    // Заголовков достаточно: тело не скачиваем.
+                    // Проверка HTTP-доступности, не воспроизведения видео или UDP-голоса.
+                    // Тело ответа не скачиваем.
                     using var response = await http.SendAsync(
                         req,
                         HttpCompletionOption.ResponseHeadersRead,
                         timeout.Token).ConfigureAwait(false);
 
                     sw.Stop();
-                    var error = ResponseError(response.StatusCode);
+                    var error = ResponseError(site, response.StatusCode);
                     return new ProbeResult(site, error is null, ElapsedMilliseconds(sw), error);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -404,26 +421,41 @@ public static class ConnectivityTester
         }
     }
 
-    /// <summary>HTTP-ответ означает, что сайт действительно пригоден для текущей проверки.</summary>
+    /// <summary>Страница или API должны вернуть успешный HTTP-ответ.</summary>
     public static bool IsUsableStatus(HttpStatusCode statusCode)
     {
         int code = (int)statusCode;
-        return code >= 200 && code < 500 &&
-               statusCode != HttpStatusCode.ProxyAuthenticationRequired &&
-               code != 451 &&
-               code != 511;
+        return code >= 200 && code < 300;
     }
 
-    private static string? ResponseError(HttpStatusCode statusCode)
+    /// <summary>
+    /// 403/404 допустимы только для корня CDN, где сам ресурс не ожидается.
+    /// Для страницы YouTube или Discord API отказ не должен приносить балл стратегии.
+    /// </summary>
+    public static bool IsUsableStatus(SiteProbe site, HttpStatusCode statusCode)
     {
-        if (IsUsableStatus(statusCode))
+        ArgumentNullException.ThrowIfNull(site);
+        return IsUsableStatus(statusCode) ||
+               site.ResponsePolicy == ProbeResponsePolicy.CdnRoot &&
+               statusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound;
+    }
+
+    private static string? ResponseError(SiteProbe site, HttpStatusCode statusCode)
+    {
+        if (IsUsableStatus(site, statusCode))
             return null;
 
         return statusCode switch
         {
+            HttpStatusCode.Unauthorized => "Сайт требует авторизацию (HTTP 401).",
+            HttpStatusCode.Forbidden => "Сайт отказал в доступе (HTTP 403).",
+            HttpStatusCode.NotFound => "Проверяемый ресурс не найден (HTTP 404).",
             HttpStatusCode.ProxyAuthenticationRequired => "Системный прокси требует авторизацию (HTTP 407).",
+            HttpStatusCode.TooManyRequests => "Сайт ограничил число запросов (HTTP 429).",
             _ when (int)statusCode == 451 => "Сайт ответил отказом из-за ограничения доступа (HTTP 451).",
             _ when (int)statusCode == 511 => "Сеть требует входа через страницу авторизации (HTTP 511).",
+            _ when (int)statusCode >= 300 && (int)statusCode < 400 =>
+                $"Не удалось получить конечный HTTPS-ответ (HTTP {(int)statusCode}).",
             _ when (int)statusCode >= 500 => $"Сервер временно недоступен (HTTP {(int)statusCode}).",
             _ => $"Неожиданный ответ сайта (HTTP {(int)statusCode}).",
         };

@@ -271,7 +271,18 @@ public sealed class StrategyTester : ObservableObject
         finally
         {
             // Процесс не должен пережить перебор ни при отмене, ни при ошибке.
-            try { await _bypass.StopAsync().ConfigureAwait(false); } catch { }
+            try
+            {
+                if (!await _bypass.StopAsync().ConfigureAwait(false))
+                {
+                    failed = true;
+                    _bypass.Log("Автоподбор не смог остановить свой процесс. Повторите остановку вручную.", LogLevel.Error);
+                }
+            }
+            catch
+            {
+                failed = true;
+            }
 
             lock (_gate)
             {
@@ -333,7 +344,9 @@ public sealed class StrategyTester : ObservableObject
         var sites = ConnectivityTester.ScoredSites;
         int totalSites = ConnectivityTester.ScoredSiteCount;
 
-        await _bypass.StopAsync().ConfigureAwait(false);
+        if (!await _bypass.StopAsync().ConfigureAwait(false))
+            throw new InvalidOperationException(
+                "Не удалось остановить предыдущую стратегию; дальнейший автоподбор отменён.");
         token.ThrowIfCancellationRequested();
 
         bool started = await _bypass.StartAsync(strategy, mode, token).ConfigureAwait(false);

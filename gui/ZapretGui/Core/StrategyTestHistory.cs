@@ -57,11 +57,11 @@ public static class StrategyTestHistory
 
     public static string CurrentProbeSuiteFingerprint()
     {
-        var source = "zapret-probes-v2-direct-strict-tls\n" +
+        var source = "zapret-probes-v3-direct-strict-tls-bounded-https-redirects\n" +
                      string.Join(
                          "\n",
                          ConnectivityTester.ScoredSites.Select(
-                             site => $"{site.Name}\t{site.Url}\t{site.CountsTowardStrategyScore}"));
+                             site => $"{site.Name}\t{site.Url}\t{site.CountsTowardStrategyScore}\t{site.ResponsePolicy}"));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
     }
 

@@ -19,9 +19,9 @@ public sealed class TrafficMonitor : ObservableObject
 
     private readonly DispatcherTimer _timer;
     private readonly double[] _samples = new double[SampleCapacity];
-    private long _prevPackets = -1;
-    private long _prevBytes = -1;
-    private DateTime _prevStamp = DateTime.MinValue;
+    private readonly TrafficCounterSampler _counter = new();
+    private long _prevStamp;
+    private int _generation;
     private bool _sampling;
 
     private TrafficMonitor()
@@ -81,6 +81,20 @@ public sealed class TrafficMonitor : ObservableObject
         }
     }
 
+    private string _transferRatesText = "↓ 0 бит/с · ↑ 0 бит/с";
+    public string TransferRatesText
+    {
+        get => _transferRatesText;
+        private set => Set(ref _transferRatesText, value);
+    }
+
+    private string _sessionTrafficText = "↓ 0 Б · ↑ 0 Б";
+    public string SessionTrafficText
+    {
+        get => _sessionTrafficText;
+        private set => Set(ref _sessionTrafficText, value);
+    }
+
     /// <summary>Пик за окно выборок — нужен, чтобы нормировать график.</summary>
     public double PeakPackets
     {
@@ -98,45 +112,47 @@ public sealed class TrafficMonitor : ObservableObject
     public void Start()
     {
         if (_timer.IsEnabled) return;
-        _prevPackets = -1;
-        _prevBytes = -1;
+        _generation++;
+        _prevStamp = 0;
+        _counter.Reset();
+        Array.Clear(_samples);
+        PacketsPerSecond = 0;
+        BytesPerSecond = 0;
+        TransferRatesText = "↓ 0 бит/с · ↑ 0 бит/с";
+        SessionTrafficText = "↓ 0 Б · ↑ 0 Б";
         _timer.Start();
     }
 
-    public void Stop() => _timer.Stop();
+    public void Stop()
+    {
+        _generation++;
+        _timer.Stop();
+    }
 
     private async Task SampleAsync()
     {
         if (_sampling) return;
         _sampling = true;
+        var generation = _generation;
         try
         {
             var snapshot = await Task.Run(Collect);
-            if (snapshot is null) return;
+            if (snapshot is null || generation != _generation || !_timer.IsEnabled) return;
 
-            var (packets, bytes, pid, memoryMb, stamp) = snapshot.Value;
+            var (adapters, pid, memoryMb, stamp) = snapshot.Value;
 
             WinwsPid = pid;
             WinwsMemoryMb = memoryMb;
 
-            if (_prevPackets >= 0 && _prevStamp != DateTime.MinValue)
-            {
-                var seconds = (stamp - _prevStamp).TotalSeconds;
-                if (seconds > 0.05)
-                {
-                    // Счётчики интерфейса могут обнулиться при переподключении адаптера.
-                    var dp = Math.Max(0, packets - _prevPackets);
-                    var db = Math.Max(0, bytes - _prevBytes);
-                    PacketsPerSecond = dp / seconds;
-                    BytesPerSecond = db / seconds;
-                    Push(PacketsPerSecond);
-                    Sampled?.Invoke(this, EventArgs.Empty);
-                }
-            }
-
-            _prevPackets = packets;
-            _prevBytes = bytes;
+            var seconds = _prevStamp == 0 ? 0 : Stopwatch.GetElapsedTime(_prevStamp, stamp).TotalSeconds;
+            var sample = _counter.Take(adapters, seconds);
             _prevStamp = stamp;
+            PacketsPerSecond = sample.PacketsPerSecond;
+            BytesPerSecond = sample.ReceiveBytesPerSecond + sample.SendBytesPerSecond;
+            TransferRatesText = $"↓ {FormatRate(sample.ReceiveBytesPerSecond)} · ↑ {FormatRate(sample.SendBytesPerSecond)}";
+            SessionTrafficText = $"↓ {FormatBytes(_counter.TotalReceivedBytes)} · ↑ {FormatBytes(_counter.TotalSentBytes)}";
+            Push(PacketsPerSecond);
+            Sampled?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
@@ -148,9 +164,9 @@ public sealed class TrafficMonitor : ObservableObject
         }
     }
 
-    private static (long packets, long bytes, int? pid, double memoryMb, DateTime stamp)? Collect()
+    private static (IReadOnlyList<AdapterTrafficSnapshot> adapters, int? pid, double memoryMb, long stamp)? Collect()
     {
-        long packets = 0, bytes = 0;
+        var adapters = new List<AdapterTrafficSnapshot>();
         try
         {
             foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
@@ -158,9 +174,19 @@ public sealed class TrafficMonitor : ObservableObject
                 if (nic.OperationalStatus != OperationalStatus.Up) continue;
                 if (nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
 
-                var s = nic.GetIPStatistics();
-                packets += s.UnicastPacketsReceived + s.UnicastPacketsSent;
-                bytes += s.BytesReceived + s.BytesSent;
+                try
+                {
+                    var s = nic.GetIPStatistics();
+                    adapters.Add(new AdapterTrafficSnapshot(
+                        nic.Id,
+                        s.UnicastPacketsReceived + s.UnicastPacketsSent,
+                        s.BytesReceived,
+                        s.BytesSent));
+                }
+                catch (NetworkInformationException)
+                {
+                    // Адаптер мог исчезнуть во время перечисления; остальные продолжают учитываться.
+                }
             }
         }
         catch
@@ -173,19 +199,43 @@ public sealed class TrafficMonitor : ObservableObject
         try
         {
             var procs = Process.GetProcessesByName("winws");
-            if (procs.Length > 0)
+            try
             {
-                pid = procs[0].Id;
-                memoryMb = procs[0].WorkingSet64 / 1024d / 1024d;
+                if (procs.Length > 0)
+                {
+                    var currentPid = procs[0].Id;
+                    var currentMemoryMb = procs[0].WorkingSet64 / 1024d / 1024d;
+                    pid = currentPid;
+                    memoryMb = currentMemoryMb;
+                }
             }
-            foreach (var p in procs) p.Dispose();
+            finally
+            {
+                foreach (var p in procs) p.Dispose();
+            }
         }
         catch
         {
             // Процесс мог умереть между перечислением и чтением — не страшно.
         }
 
-        return (packets, bytes, pid, memoryMb, DateTime.UtcNow);
+        return (adapters, pid, memoryMb, Stopwatch.GetTimestamp());
+    }
+
+    private static string FormatRate(double bytesPerSecond)
+    {
+        var bits = bytesPerSecond * 8;
+        if (bits >= 1_000_000) return $"{bits / 1_000_000:0.0} Мбит/с";
+        if (bits >= 1_000) return $"{bits / 1_000:0} Кбит/с";
+        return $"{bits:0} бит/с";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1024L * 1024 * 1024) return $"{bytes / (1024d * 1024 * 1024):0.00} ГБ";
+        if (bytes >= 1024L * 1024) return $"{bytes / (1024d * 1024):0.0} МБ";
+        if (bytes >= 1024) return $"{bytes / 1024d:0.0} КБ";
+        return $"{bytes} Б";
     }
 
     private void Push(double value)

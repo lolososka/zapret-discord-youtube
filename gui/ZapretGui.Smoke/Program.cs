@@ -32,9 +32,11 @@ internal static class Program
             else if (args.Length == 0)
             {
                 RunVersionPolicySmoke();
+                _checks += TrafficCounterSmoke.Run();
+                _checks += OwnedProcessStopperSmoke.Run();
                 RunServiceOwnershipSmoke();
                 RunStrategyParserSmoke();
-                await RunConnectivityPolicySmokeAsync();
+                _checks += await ConnectivityPolicySmoke.RunAsync();
                 RunStrategyHistorySmoke();
                 await RunManifestSmokeAsync();
                 await RunSupportBundleSmokeAsync();
@@ -240,64 +242,6 @@ internal static class Program
         {
             Directory.Delete(directory, recursive: true);
         }
-    }
-
-    private static async Task RunConnectivityPolicySmokeAsync()
-    {
-        Check(
-            ConnectivityTester.ScoredSiteCount == 4,
-            "Only the core Discord and YouTube probes may affect strategy scoring.");
-        Check(
-            ConnectivityTester.ScoredSites.All(site => site.CountsTowardStrategyScore),
-            "The strategy batch must contain only scored targets.");
-        Check(
-            ConnectivityTester.Sites.Count(site => !site.CountsTowardStrategyScore) == 2,
-            "The regional CDN and general-internet control must stay diagnostic-only.");
-
-        foreach (var status in new[]
-                 {
-                     HttpStatusCode.OK,
-                     HttpStatusCode.NoContent,
-                     HttpStatusCode.Redirect,
-                     HttpStatusCode.Forbidden,
-                     HttpStatusCode.NotFound,
-                     HttpStatusCode.TooManyRequests,
-                 })
-        {
-            Check(
-                ConnectivityTester.IsUsableStatus(status),
-                $"A reachable target response must be accepted: {(int)status}.");
-        }
-
-        foreach (var status in new[]
-                 {
-                     HttpStatusCode.ProxyAuthenticationRequired,
-                     (HttpStatusCode)451,
-                     HttpStatusCode.InternalServerError,
-                     HttpStatusCode.ServiceUnavailable,
-                     (HttpStatusCode)511,
-                 })
-        {
-            Check(
-                !ConnectivityTester.IsUsableStatus(status),
-                $"A blocked/intercepted/unavailable response must be rejected: {(int)status}.");
-        }
-
-        var ok = new ProbeResult(ConnectivityTester.Sites[0], true, 42, null);
-        var failed = new ProbeResult(ConnectivityTester.Sites[0], false, 6000, "timeout");
-        Check(ok.ResultText == "42 мс", "A successful probe must show its latency.");
-        Check(failed.ResultText == "не открыт", "A failed probe must not present timeout as useful latency.");
-
-        var invalid = await ConnectivityTester.ProbeAsync(
-            new SiteProbe("invalid", "http://example.test/"));
-        Check(!invalid.Ok && invalid.Error?.Contains("HTTPS", StringComparison.Ordinal) == true,
-            "A non-HTTPS probe must fail closed before network access.");
-
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-        await ExpectThrowsAsync<OperationCanceledException>(
-            async () => await ConnectivityTester.ProbeAllAsync(ConnectivityTester.Sites, cancellation.Token),
-            "Caller cancellation must not be reported as a blocked website.");
     }
 
     private static void RunStrategyHistorySmoke()

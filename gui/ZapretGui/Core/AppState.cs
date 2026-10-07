@@ -863,7 +863,9 @@ public sealed class AppState : ObservableObject
 
             // Финальная остановка выполняется под тем же gate: после неё новый
             // принадлежащий GUI процесс уже не сможет появиться.
-            await _bypass.StopAsync(ownedOnly: true);
+            if (!await _bypass.StopAsync(ownedOnly: true))
+                throw new InvalidOperationException(
+                    "Не удалось подтвердить остановку своего winws.exe при закрытии приложения.");
         }
         finally
         {
@@ -1150,6 +1152,17 @@ public sealed class AppState : ObservableObject
             SelectedStrategy = fallback;
             SetGameFilter(previousMode, notifyRunning: false);
 
+            // Если остановка не подтверждена, контроллер сохранил живой собственный
+            // процесс. Прежний профиль уже работает — повторный fallback его снова гасил бы.
+            if (_bypass.State is BypassState.Running &&
+                SameStrategy(fallback, _bypass.ActiveStrategy) &&
+                previousMode == _bypass.ActiveGameFilterMode)
+            {
+                Notify("Не удалось остановить прежний обход — переключение отменено. " +
+                       "Прежняя конфигурация сохранена; повторите остановку.", ToastKind.Error);
+                return;
+            }
+
             // Shutdown отменяет token до ожидания общего gate. После этой точки fallback
             // не должен начинаться, иначе он сможет появиться после финального StopAsync.
             if (ct.IsCancellationRequested || _isShuttingDown) return;
@@ -1201,8 +1214,14 @@ public sealed class AppState : ObservableObject
                 return;
             }
 
-            await _bypass.StopAsync();
+            var stopped = await _bypass.StopAsync();
             if (ct.IsCancellationRequested || _isShuttingDown) return;
+            if (!stopped)
+            {
+                Notify("Не удалось остановить обход — процесс остаётся под управлением GUI. Смотрите журнал.",
+                       ToastKind.Error);
+                return;
+            }
             Notify(
                 IsRunning && _bypass.ActiveStrategy is null
                     ? "Свой обход остановлен, но чужой или служебный winws.exe продолжает работать"
@@ -1256,7 +1275,12 @@ public sealed class AppState : ObservableObject
                 return;
             }
 
-            await _bypass.StopAsync();
+            if (!await _bypass.StopAsync())
+            {
+                Notify("Служба не установлена: предыдущий процесс не удалось остановить. Смотрите журнал.",
+                       ToastKind.Error);
+                return;
+            }
             ct.ThrowIfCancellationRequested();
 
             var r = await ZapretServiceManager.InstallAsync(target, mode);
