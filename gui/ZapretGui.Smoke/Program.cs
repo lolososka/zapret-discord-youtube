@@ -29,6 +29,14 @@ internal static class Program
                     upstreamVersion,
                     tag);
             }
+            else if (args is ["--connection-assessment"])
+            {
+                _checks += ConnectionAssessmentSmoke.Run();
+            }
+            else if (args is ["--connection-profiles"])
+            {
+                _checks += ConnectionProfilesSmoke.Run();
+            }
             else if (args.Length == 0)
             {
                 RunVersionPolicySmoke();
@@ -38,6 +46,8 @@ internal static class Program
                 RunStrategyParserSmoke();
                 _checks += await ConnectivityPolicySmoke.RunAsync();
                 RunStrategyHistorySmoke();
+                _checks += ConnectionAssessmentSmoke.Run();
+                _checks += ConnectionProfilesSmoke.Run();
                 await RunManifestSmokeAsync();
                 await RunSupportBundleSmokeAsync();
             }

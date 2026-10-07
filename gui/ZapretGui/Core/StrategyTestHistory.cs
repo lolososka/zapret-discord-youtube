@@ -23,6 +23,16 @@ public sealed class StrategyTestResult
     public int TotalCount { get; set; }
     public int AverageLatencyMs { get; set; }
     public string Detail { get; set; } = string.Empty;
+    public List<ProbeSnapshot>? Probes { get; set; }
+}
+
+/// <summary>Только результат фиксированной пробы; URL и сетевые настройки из JSON не загружаются.</summary>
+public sealed class ProbeSnapshot
+{
+    public string Name { get; set; } = string.Empty;
+    public bool Ok { get; set; }
+    public int LatencyMs { get; set; }
+    public string? Error { get; set; }
 }
 
 /// <summary>
@@ -47,7 +57,35 @@ public static class StrategyTestHistory
     public const int CurrentSchemaVersion = 2;
     public const int MaxResults = 256;
     public const int MaxDetailLength = 512;
+    public const int MaxProbeErrorLength = 160;
     private const int MaxLatencyMs = 10 * 60 * 1000;
+    private const int MaxProbeInputs = 32;
+
+    /// <summary>Сохраняет ограниченную копию проб, не сохраняя адреса или объекты SiteProbe.</summary>
+    public static List<ProbeSnapshot>? SnapshotProbes(IReadOnlyList<ProbeResult>? probes)
+    {
+        if (probes is null)
+            return null;
+        return NormalizeProbes(probes.Take(MaxProbeInputs).Where(probe => probe?.Site is not null).Select(probe =>
+            new ProbeSnapshot
+            {
+                Name = probe.Site.Name,
+                Ok = probe.Ok,
+                LatencyMs = probe.LatencyMs,
+                Error = probe.Error,
+            }));
+    }
+
+    /// <summary>Имена сопоставляются только с текущим фиксированным набором HTTPS-проб.</summary>
+    public static IReadOnlyList<ProbeResult>? RestoreProbes(IEnumerable<ProbeSnapshot>? probes)
+    {
+        var normalized = NormalizeProbes(probes);
+        if (normalized is null)
+            return null;
+        return normalized.Select(probe => new ProbeResult(
+            ConnectivityTester.Sites.Single(site => string.Equals(site.Name, probe.Name, StringComparison.Ordinal)),
+            probe.Ok, probe.LatencyMs, probe.Error)).ToArray();
+    }
 
     public static string Fingerprint(Strategy strategy)
     {
@@ -221,6 +259,19 @@ public static class StrategyTestHistory
         if (detail.Length > MaxDetailLength)
             detail = detail[..MaxDetailLength];
 
+        var probes = NormalizeProbes(source.Probes);
+        // Старый суммарный результат сохраняется, но противоречащая ему детализация
+        // не может превратить неудачу в рекомендацию для отдельного сервиса.
+        if (probes is { Count: > 0 })
+        {
+            var scoredNames = ConnectivityTester.ScoredSites.Select(site => site.Name).ToHashSet(StringComparer.Ordinal);
+            var scored = probes.Where(probe => scoredNames.Contains(probe.Name)).ToArray();
+            int knownOk = scored.Count(probe => probe.Ok);
+            int knownFailed = scored.Length - knownOk;
+            if (knownOk > source.OkCount || knownFailed > source.TotalCount - source.OkCount)
+                probes = null;
+        }
+
         return new StrategyTestResult
         {
             StrategyName = name,
@@ -230,7 +281,47 @@ public static class StrategyTestHistory
             TotalCount = source.TotalCount,
             AverageLatencyMs = source.AverageLatencyMs,
             Detail = detail,
+            Probes = probes,
         };
+    }
+
+    private static List<ProbeSnapshot>? NormalizeProbes(IEnumerable<ProbeSnapshot>? source)
+    {
+        if (source is null)
+            return null;
+
+        var sitesByName = ConnectivityTester.Sites.ToDictionary(site => site.Name, StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<ProbeSnapshot>();
+        foreach (var probe in source.Take(MaxProbeInputs))
+        {
+            if (probe is null || probe.Name is null || probe.Name.Length > 64 ||
+                probe.LatencyMs is < 0 or > MaxLatencyMs ||
+                !sitesByName.TryGetValue(probe.Name.Trim(), out var site) || !seen.Add(site.Name))
+                continue;
+
+            string? error = null;
+            if (!probe.Ok && !string.IsNullOrWhiteSpace(probe.Error))
+            {
+                // Ограничиваем до очистки: огромная строка в повреждённой истории
+                // не должна порождать вторую огромную строку или многострочную карточку.
+                var raw = probe.Error.Length > MaxProbeErrorLength
+                    ? probe.Error[..MaxProbeErrorLength]
+                    : probe.Error;
+                error = new string(raw.Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim();
+                if (error.Length == 0)
+                    error = null;
+            }
+
+            result.Add(new ProbeSnapshot
+            {
+                Name = site.Name,
+                Ok = probe.Ok,
+                LatencyMs = probe.LatencyMs,
+                Error = error,
+            });
+        }
+        return result;
     }
 
     private static bool IsSha256(string value)

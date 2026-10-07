@@ -371,6 +371,11 @@
                                                  GroupName="Nav"
                                                  Content="Стратегии"
                                                  Tag="{StaticResource IconLayersStroke}" />
+                                    <RadioButton x:Name="NavAssistant"
+                                                 Style="{StaticResource NavItemStyle}"
+                                                 GroupName="Nav"
+                                                 Content="Мастер сети"
+                                                 Tag="{StaticResource IconPulseStroke}" />
                                     <RadioButton x:Name="NavDiagnostics"
                                                  Style="{StaticResource NavItemStyle}"
                                                  GroupName="Nav"

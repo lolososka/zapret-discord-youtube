@@ -12,7 +12,7 @@ public enum ToastKind { Info, Success, Warning, Error }
 /// Единая точка состояния приложения: все страницы биндятся сюда.
 /// Живёт столько же, сколько процесс; создаётся на UI-потоке.
 /// </summary>
-public sealed class AppState : ObservableObject
+public sealed partial class AppState : ObservableObject
 {
     private static AppState? _instance;
     public static AppState Instance => _instance ??= new AppState();
@@ -63,7 +63,8 @@ public sealed class AppState : ObservableObject
             () => IsDiagnosticsRunning &&
                   !_isShuttingDown &&
                   _diagnosticsCancellation is { IsCancellationRequested: false });
-        RunProbesCommand = new AsyncRelayCommand(RunProbesAsync);
+        RunProbesCommand = new AsyncRelayCommand(RunProbesAsync,
+            () => !IsProbing && !_isBypassOperationActive && !_isShuttingDown);
         UpdateIpsetCommand = new AsyncRelayCommand(UpdateIpsetAsync);
         CheckHostsCommand = new AsyncRelayCommand(CheckHostsAsync);
         CheckUpdatesCommand = new AsyncRelayCommand(() => CheckUpdatesAsync(silent: false));
@@ -357,6 +358,8 @@ public sealed class AppState : ObservableObject
             if (!Set(ref _isProbing, value)) return;
             Raise(nameof(ProbeActionText));
             Raise(nameof(ProbeEmptyText));
+            RunProbesCommand.RaiseCanExecuteChanged();
+            _assistant?.RefreshActions();
         }
     }
 
@@ -486,7 +489,9 @@ public sealed class AppState : ObservableObject
         InstallServiceCommand.RaiseCanExecuteChanged();
         RemoveServiceCommand.RaiseCanExecuteChanged();
         AutoPickCommand.RaiseCanExecuteChanged();
+        RunProbesCommand.RaiseCanExecuteChanged();
         Raise(nameof(CanApplyBestTestedStrategy));
+        _assistant?.RefreshActions();
     }
 
     // ---------- Избранное и «работала у вас» ----------
@@ -563,6 +568,7 @@ public sealed class AppState : ObservableObject
             TotalCount = trial.TotalCount,
             AverageLatencyMs = trial.AverageLatencyMs,
             Detail = detail,
+            Probes = StrategyTestHistory.SnapshotProbes(trial.Probes),
         };
 
         run.Results.RemoveAll(item => string.Equals(
@@ -1696,7 +1702,8 @@ public sealed class StrategyPreferences
                 result.AverageLatencyMs,
                 result.Detail,
                 result.TestedAtUtc,
-                run.Mode));
+                run.Mode,
+                StrategyTestHistory.RestoreProbes(result.Probes)));
         }
 
         return trials;

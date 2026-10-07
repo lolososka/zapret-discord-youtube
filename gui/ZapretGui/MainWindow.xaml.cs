@@ -53,6 +53,7 @@ public partial class MainWindow : System.Windows.Window
 
         _nav.Add(("dashboard", NavDashboard));
         _nav.Add(("strategies", NavStrategies));
+        _nav.Add(("assistant", NavAssistant));
         _nav.Add(("diagnostics", NavDiagnostics));
         _nav.Add(("telegram", NavTelegram));
         _nav.Add(("logs", NavLogs));
@@ -72,7 +73,7 @@ public partial class MainWindow : System.Windows.Window
         KeyDown += OnWindowKeyDown;
     }
 
-    /// <summary>Переход: "dashboard" | "strategies" | "diagnostics" | "telegram" | "logs" | "settings".</summary>
+    /// <summary>Переход между dashboard, strategies, assistant, diagnostics, telegram, logs, settings.</summary>
     public void NavigateTo(string key)
     {
         if (string.IsNullOrWhiteSpace(key))
@@ -299,6 +300,7 @@ public partial class MainWindow : System.Windows.Window
                 Key.D4 or Key.NumPad4 => 3,
                 Key.D5 or Key.NumPad5 => 4,
                 Key.D6 or Key.NumPad6 => 5,
+                Key.D7 or Key.NumPad7 => 6,
                 _ => -1,
             };
 
@@ -512,6 +514,7 @@ public partial class MainWindow : System.Windows.Window
         }, "Панель"),
 
         "strategies" => SafeCreate(() => new StrategiesView(), "Стратегии"),
+        "assistant" => SafeCreate(() => new ConnectionAssistantView(), "Мастер сети"),
         "diagnostics" => SafeCreate(() => new DiagnosticsView(), "Диагностика"),
 
         "telegram" => SafeCreate(() => new TelegramView(), "Телеграм"),

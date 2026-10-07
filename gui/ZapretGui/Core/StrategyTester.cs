@@ -6,7 +6,7 @@ namespace ZapretGui.Core;
 /// <summary>Результат одной попытки: сколько проб прошло и с какой задержкой.</summary>
 public sealed record StrategyTrial(Strategy Strategy, bool Success, int OkCount, int TotalCount,
                                    int AverageLatencyMs, string Detail, DateTime TestedAtUtc,
-                                   GameFilterMode Mode)
+                                   GameFilterMode Mode, IReadOnlyList<ProbeResult>? Probes = null)
 {
     public string Title => Strategy?.DisplayName ?? "—";
 
@@ -341,7 +341,9 @@ public sealed class StrategyTester : ObservableObject
 
     private async Task<StrategyTrial> TryOneAsync(Strategy strategy, GameFilterMode mode, CancellationToken token)
     {
-        var sites = ConnectivityTester.ScoredSites;
+        // Диагностические контрольные узлы входят в сравнение до/после, но ниже
+        // в рейтинг по-прежнему попадают только четыре основные HTTPS-пробы.
+        var sites = ConnectivityTester.Sites;
         int totalSites = ConnectivityTester.ScoredSiteCount;
 
         if (!await _bypass.StopAsync().ConfigureAwait(false))
@@ -391,7 +393,7 @@ public sealed class StrategyTester : ObservableObject
                 : "Discord и YouTube не открылись: " +
                   string.Join("; ", failedTargets.Select(FailureText));
 
-        return new StrategyTrial(strategy, ok == totalSites, ok, totalSites, avg, detail, DateTime.UtcNow, mode);
+        return new StrategyTrial(strategy, ok == totalSites, ok, totalSites, avg, detail, DateTime.UtcNow, mode, probes);
     }
 
     /// <summary>Больше успешных проб, при равенстве — меньшая задержка.</summary>
