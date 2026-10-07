@@ -31,6 +31,7 @@
 #ifndef InstallerApplicationMutexes
   #define InstallerApplicationMutexes "Global\ZapretGUI.SingleInstance,Global\ZapretGUI.Update.Apply"
 #endif
+#define WinDivertDriverSha256 GetSHA256OfFile(SourceDir + "\bin\WinDivert64.sys")
 
 [Setup]
 AppId={#InstallerAppId}
@@ -86,7 +87,10 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 [Files]
 ; The portable updater replaces the whole runtime directory. Keeping Inno's
 ; uninstaller one level above it makes Apps & Features survive GUI updates.
-Source: "{#SourceDir}\*"; DestDir: "{app}\runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
+; A loaded driver cannot be deleted even when no winws process remains. Check
+; bytes, not its unchanged Win32 version, and install it before other payloads.
+Source: "{#SourceDir}\bin\WinDivert64.sys"; DestDir: "{app}\runtime\bin"; Flags: ignoreversion; Check: ShouldInstallDriver; BeforeInstall: BeforeInstallDriver
+Source: "{#SourceDir}\*"; DestDir: "{app}\runtime"; Excludes: "\bin\WinDivert64.sys"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Zapret Control Center"; Filename: "{app}\runtime\ZapretGUI.exe"; WorkingDir: "{app}\runtime"
@@ -114,6 +118,8 @@ const
   AutoRunValueName = 'ZapretGUI';
   IpsetSentinel = '203.0.113.113/32';
   ApplicationMutexes = '{#InstallerApplicationMutexes}';
+  DriverRelativePath = 'bin\WinDivert64.sys';
+  ExpectedDriverSha256 = '{#WinDivertDriverSha256}';
 
 var
   HadExistingRuntime: Boolean;
@@ -123,6 +129,20 @@ var
   StateDir: String;
   ServiceNeedsRestart: Boolean;
   ServiceRestarted: Boolean;
+
+function OpenExistingDriverFile(
+  const FileName: String;
+  DesiredAccess, ShareMode: LongWord;
+  SecurityAttributes: THandle;
+  CreationDisposition, FlagsAndAttributes: LongWord;
+  TemplateFile: THandle): THandle;
+  external 'CreateFileW@kernel32.dll stdcall';
+
+function CloseDriverFile(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function DriverFileError: LongWord;
+  external 'GetLastError@kernel32.dll stdcall';
 
 function RuntimeDir: String;
 begin
@@ -141,6 +161,59 @@ end;
 function RuntimePath(const RelativePath: String): String;
 begin
   Result := AddBackslash(RuntimeDir) + RelativePath;
+end;
+
+function ShouldInstallDriver: Boolean;
+begin
+  Result := True;
+  if FileExists(RuntimePath(DriverRelativePath)) then
+    Result := CompareText(
+      GetSHA256OfFile(RuntimePath(DriverRelativePath)),
+      ExpectedDriverSha256) <> 0;
+end;
+
+function DriverReplacementError: String;
+var
+  FileHandle: THandle;
+  ErrorCode: LongWord;
+begin
+  Result := '';
+  try
+    if not ShouldInstallDriver then begin
+      Log('WinDivert64.sys matches the payload SHA-256; keeping the existing driver.');
+      exit;
+    end;
+    if not FileExists(RuntimePath(DriverRelativePath)) then
+      exit;
+
+    // Request write/delete access without writing, deleting, or truncating.
+    // A loaded kernel image or another open handle must fail before any copy.
+    FileHandle := OpenExistingDriverFile(
+      RuntimePath(DriverRelativePath), $40010000, 0, 0, 3, $80, 0);
+    if FileHandle = THandle(-1) then begin
+      ErrorCode := DriverFileError;
+      Log('WinDivert64.sys replacement preflight failed: ' + IntToStr(ErrorCode));
+      Result := 'Не удалось подготовить обновление WinDivert (код ' +
+        IntToStr(ErrorCode) + '). Закройте программы обхода и VPN и повторите установку. ' +
+        'Если драйвер остаётся занят, перезагрузите Windows и запустите установщик до запуска обхода. ' +
+        'Файлы программы ещё не заменены.';
+      exit;
+    end;
+    CloseDriverFile(FileHandle);
+  except
+    Log('WinDivert64.sys verification failed: ' + GetExceptionMessage);
+    Result := 'Не удалось проверить WinDivert64.sys. Установка не начата. ' +
+      'Проверьте доступ к папке программы и повторите установку.';
+  end;
+end;
+
+procedure BeforeInstallDriver;
+var
+  ErrorText: String;
+begin
+  ErrorText := DriverReplacementError;
+  if ErrorText <> '' then
+    RaiseException(ErrorText);
 end;
 
 procedure BackupOptionalFile(const RelativePath: String);
@@ -525,6 +598,8 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  WasRunning: Boolean;
 begin
   Result := '';
   try
@@ -532,9 +607,14 @@ begin
       Result := 'Закройте Zapret Control Center и дождитесь завершения встроенного обновления.';
       exit;
     end;
+    Result := DriverReplacementError;
+    if Result <> '' then
+      exit;
     CaptureUserState;
-    if not StopOwnedService(ServiceNeedsRestart) then
+    if not StopOwnedService(WasRunning) then
       Result := 'Не удалось остановить принадлежащую программе службу zapret. Установка отменена.';
+    // PrepareToInstall can be retried. Do not forget a service stopped earlier.
+    ServiceNeedsRestart := ServiceNeedsRestart or WasRunning;
   except
     Result := GetExceptionMessage;
   end;
@@ -543,6 +623,8 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then begin
+    if ShouldInstallDriver then
+      RaiseException('WinDivert64.sys не совпадает с новой сборкой. Установка не завершена.');
     RestoreUserState;
     if not StartOwnedService then
       RaiseException('Программа обновлена, но службу zapret не удалось снова запустить.');

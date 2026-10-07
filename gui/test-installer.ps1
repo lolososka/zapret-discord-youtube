@@ -1,4 +1,4 @@
-<# Performs a silent fresh-install, upgrade, preservation, and uninstall smoke test. #>
+<# Tests fresh install, locked-driver upgrades, preservation, and uninstall. #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
@@ -15,7 +15,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Invoke-CheckedProcess {
-    param([string]$FilePath, [string[]]$Arguments)
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [int]$ExpectedExitCode = 0
+    )
 
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = $FilePath
@@ -35,12 +39,41 @@ function Invoke-CheckedProcess {
     }
     try {
         $process.WaitForExit()
-        if ($process.ExitCode -ne 0) {
-            throw "$([IO.Path]::GetFileName($FilePath)) failed with exit code $($process.ExitCode)."
+        if ($process.ExitCode -ne $ExpectedExitCode) {
+            throw "$([IO.Path]::GetFileName($FilePath)) returned exit code $($process.ExitCode); expected $ExpectedExitCode."
         }
     }
     finally {
         $process.Dispose()
+    }
+}
+
+function Assert-RuntimeHashesUnchanged {
+    param(
+        [string]$RuntimeRoot,
+        [Collections.Generic.Dictionary[string,string]]$ExpectedHashes
+    )
+
+    $files = @(Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File)
+    if ($files.Count -ne $ExpectedHashes.Count) {
+        throw 'Blocked driver setup added or removed runtime files.'
+    }
+    foreach ($file in $files) {
+        if (-not $ExpectedHashes.ContainsKey($file.FullName) -or
+            (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne
+            $ExpectedHashes[$file.FullName]) {
+            throw "Blocked driver setup modified runtime payload: $($file.FullName)"
+        }
+    }
+}
+
+function Assert-DriverFailureLog {
+    param([string]$LogPath, [string]$FailureStage)
+
+    $log = Get-Content -LiteralPath $LogPath -Raw
+    $diagnostic = "WinDivert64.sys $FailureStage failed:"
+    if ($log -notmatch [regex]::Escape($diagnostic)) {
+        throw "Blocked driver setup log has no diagnostic: $diagnostic"
     }
 }
 
@@ -60,6 +93,11 @@ $installRoot = Join-Path $testRoot 'Zapret Control Center'
 $runtimeRoot = Join-Path $installRoot 'runtime'
 $setupLog = Join-Path $testRoot 'setup.log'
 $upgradeLog = Join-Path $testRoot 'upgrade.log'
+$lockedDriverLog = Join-Path $testRoot 'changed-locked-driver.log'
+$unreadableDriverLog = Join-Path $testRoot 'unreadable-driver.log'
+$readOnlyDriverLog = Join-Path $testRoot 'changed-read-only-driver.log'
+$repairDriverLog = Join-Path $testRoot 'changed-unlocked-driver.log'
+$missingDriverLog = Join-Path $testRoot 'missing-driver.log'
 $smokeInstallerDir = Join-Path $testRoot 'installer'
 $smokeAppId = '{' + [guid]::NewGuid().ToString().ToUpperInvariant() + '}'
 $smokeInstallerName = [IO.Path]::GetFileName($InstallerPath)
@@ -229,10 +267,154 @@ try {
         '/SUPPRESSMSGBOXES',
         '/NORESTART',
         '/NOICONS',
+        # Do not let Restart Manager close the test process holding the driver.
+        '/NOCLOSEAPPLICATIONS',
         "/DIR=$installRoot",
         "/LOG=$upgradeLog"
     )
-    Invoke-CheckedProcess $InstallerPath $upgradeArgs
+
+    $driverPath = Join-Path $runtimeRoot 'bin\WinDivert64.sys'
+    $packagedDriverPath = Join-Path $packageRoot 'bin\WinDivert64.sys'
+    $expectedDriverHash = (Get-FileHash `
+        -LiteralPath $packagedDriverPath `
+        -Algorithm SHA256).Hash
+
+    # A loaded driver can be readable while Windows denies write and delete.
+    # The identical payload must be skipped, not replaced or deferred to reboot.
+    $originalDriver = Get-Item -LiteralPath $driverPath
+    $originalDriverCreationTime = $originalDriver.CreationTimeUtc
+    $originalDriverWriteTime = $originalDriver.LastWriteTimeUtc
+    $driverLock = $null
+    try {
+        $driverLock = [IO.FileStream]::new(
+            $driverPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::Read,
+            [IO.FileShare]::Read)
+        Invoke-CheckedProcess $InstallerPath $upgradeArgs
+        if ((Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash -ne
+            $expectedDriverHash) {
+            throw 'Installer changed the locked identical WinDivert64.sys driver.'
+        }
+        $unchangedDriver = Get-Item -LiteralPath $driverPath
+        if ($unchangedDriver.CreationTimeUtc -ne $originalDriverCreationTime -or
+            $unchangedDriver.LastWriteTimeUtc -ne $originalDriverWriteTime) {
+            throw 'Installer changed timestamps of the locked identical WinDivert64.sys driver.'
+        }
+    }
+    finally {
+        if ($null -ne $driverLock) {
+            $driverLock.Dispose()
+        }
+    }
+
+    # Corrupt only this generated test install. A changed locked driver must
+    # fail in PrepareToInstall (exit 7), before any managed payload is copied.
+    $changedDriverBytes = [Text.Encoding]::UTF8.GetBytes(
+        'installer-changed-driver-' + [guid]::NewGuid().ToString('N'))
+    [IO.File]::WriteAllBytes($driverPath, $changedDriverBytes)
+    $managedMarkerPath = Join-Path $runtimeRoot 'UPDATE_MANIFEST.json'
+    $managedMarker = 'installer-driver-lock-no-copy-' +
+        [guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText(
+        $managedMarkerPath,
+        $managedMarker,
+        [Text.UTF8Encoding]::new($false))
+    $beforeBlockedUpgrade = [Collections.Generic.Dictionary[string,string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in @(Get-ChildItem -LiteralPath $runtimeRoot -Recurse -File)) {
+        $beforeBlockedUpgrade.Add(
+            $file.FullName,
+            (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash)
+    }
+    $changedLockedArgs = @(
+        $upgradeArgs | Where-Object { -not $_.StartsWith('/LOG=') }
+    ) + "/LOG=$lockedDriverLog"
+    $driverLock = $null
+    try {
+        $driverLock = [IO.FileStream]::new(
+            $driverPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::Read,
+            [IO.FileShare]::Read)
+        Invoke-CheckedProcess $InstallerPath $changedLockedArgs -ExpectedExitCode 7
+        if ([IO.File]::ReadAllText($managedMarkerPath) -ne $managedMarker) {
+            throw 'Locked changed-driver setup copied payload before failing.'
+        }
+        Assert-RuntimeHashesUnchanged $runtimeRoot $beforeBlockedUpgrade
+        Assert-DriverFailureLog $lockedDriverLog 'replacement preflight'
+    }
+    finally {
+        if ($null -ne $driverLock) {
+            $driverLock.Dispose()
+        }
+    }
+
+    # A driver that cannot be hashed must also fail closed before payload copy.
+    $unreadableArgs = @(
+        $upgradeArgs | Where-Object { -not $_.StartsWith('/LOG=') }
+    ) + "/LOG=$unreadableDriverLog"
+    $driverLock = $null
+    try {
+        $driverLock = [IO.FileStream]::new(
+            $driverPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::Read,
+            [IO.FileShare]::None)
+        Invoke-CheckedProcess $InstallerPath $unreadableArgs -ExpectedExitCode 7
+    }
+    finally {
+        if ($null -ne $driverLock) {
+            $driverLock.Dispose()
+        }
+    }
+    Assert-RuntimeHashesUnchanged $runtimeRoot $beforeBlockedUpgrade
+    Assert-DriverFailureLog $unreadableDriverLog 'verification'
+
+    # File attributes can deny replacement even when no process holds a lock.
+    $readOnlyArgs = @(
+        $upgradeArgs | Where-Object { -not $_.StartsWith('/LOG=') }
+    ) + "/LOG=$readOnlyDriverLog"
+    $originalAttributes = [IO.File]::GetAttributes($driverPath)
+    try {
+        [IO.File]::SetAttributes(
+            $driverPath,
+            $originalAttributes -bor [IO.FileAttributes]::ReadOnly)
+        Invoke-CheckedProcess $InstallerPath $readOnlyArgs -ExpectedExitCode 7
+    }
+    finally {
+        [IO.File]::SetAttributes($driverPath, $originalAttributes)
+    }
+    Assert-RuntimeHashesUnchanged $runtimeRoot $beforeBlockedUpgrade
+    Assert-DriverFailureLog $readOnlyDriverLog 'replacement preflight'
+
+    # The same changed driver must be repaired once its test-only lock is gone.
+    $changedUnlockedArgs = @(
+        $upgradeArgs | Where-Object { -not $_.StartsWith('/LOG=') }
+    ) + "/LOG=$repairDriverLog"
+    Invoke-CheckedProcess $InstallerPath $changedUnlockedArgs
+    if ((Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash -ne
+        $expectedDriverHash) {
+        throw 'Installer did not repair the changed unlocked WinDivert64.sys driver.'
+    }
+    $expectedManifestHash = (Get-FileHash `
+        -LiteralPath (Join-Path $packageRoot 'UPDATE_MANIFEST.json') `
+        -Algorithm SHA256).Hash
+    if ((Get-FileHash -LiteralPath $managedMarkerPath -Algorithm SHA256).Hash -ne
+        $expectedManifestHash) {
+        throw 'Installer did not replace the managed-file marker after the lock was released.'
+    }
+
+    # A missing driver in the generated install is a recoverable repair case.
+    Remove-Item -LiteralPath $driverPath -Force
+    $missingDriverArgs = @(
+        $upgradeArgs | Where-Object { -not $_.StartsWith('/LOG=') }
+    ) + "/LOG=$missingDriverLog"
+    Invoke-CheckedProcess $InstallerPath $missingDriverArgs
+    if ((Get-FileHash -LiteralPath $driverPath -Algorithm SHA256).Hash -ne
+        $expectedDriverHash) {
+        throw 'Installer did not recover the missing WinDivert64.sys driver.'
+    }
 
     if ([IO.File]::ReadAllText($userList) -ne $userMarker) {
         throw 'Installer upgrade changed the user domain list.'
